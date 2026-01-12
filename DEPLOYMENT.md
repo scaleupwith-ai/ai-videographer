@@ -1,120 +1,163 @@
 # AI Videographer Deployment Guide
 
-## Architecture Overview
+## Production Architecture
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
 │   Vercel        │────▶│   Supabase      │────▶│   Cloudflare R2 │
-│   (Next.js)     │     │   (Postgres+Auth)│     │   (Media Storage)│
+│   (Next.js)     │     │   (Postgres)    │     │   (Media)       │
 └─────────────────┘     └─────────────────┘     └─────────────────┘
         │                                                │
         ▼                                                │
 ┌─────────────────┐     ┌─────────────────┐              │
-│   Upstash Redis │◀────│   Fly.io Worker │◀─────────────┘
-│   (Job Queue)   │     │   (FFmpeg)      │
+│   Upstash Redis │◀────│   AWS EC2       │◀─────────────┘
+│   (BullMQ)      │     │   (FFmpeg)      │
 └─────────────────┘     └─────────────────┘
 ```
 
-## Prerequisites
+## Current Production Setup
 
-1. **Supabase** account with a project
-2. **Cloudflare** account with R2 storage enabled
-3. **Vercel** account
-4. **Fly.io** account
-5. **Upstash** account (or self-hosted Redis)
+| Component | Service | Status |
+|-----------|---------|--------|
+| Web App | Vercel | Ready to deploy |
+| Database | Supabase Postgres | ✅ Running |
+| Auth | Supabase Auth | ✅ Running |
+| Media Storage | Cloudflare R2 | ✅ Configured |
+| Job Queue | Upstash Redis | ✅ Running |
+| Render Worker | AWS EC2 + Docker | ✅ Running |
+| Container Registry | AWS ECR | ✅ Configured |
 
 ---
 
 ## 1. Supabase Setup
 
-### Create Project
-1. Go to [supabase.com](https://supabase.com) and create a new project
-2. Note your project URL and keys from Settings > API
+### Run Database Migration
 
-### Run Migrations
-```bash
-# Install Supabase CLI
-npm install -g supabase
+Execute `supabase/migrations/0001_init.sql` in Supabase SQL Editor.
 
-# Login
-supabase login
+This creates:
+- `projects` - Video projects with timeline JSON
+- `media_assets` - Uploaded files metadata  
+- `brand_presets` - Logo, colors, fonts, overlay styles
+- `render_jobs` - Async render progress tracking
 
-# Link to your project
-supabase link --project-ref YOUR_PROJECT_REF
+### Get Credentials
 
-# Run migrations
-supabase db push
-```
-
-Or manually run the SQL from `supabase/migrations/0001_init.sql` in the SQL Editor.
-
-### Enable Auth
-1. Go to Authentication > Providers
-2. Enable Email provider (disable email confirmation for dev)
-3. Optionally enable OAuth providers
+From Supabase Dashboard → Settings → API:
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
 
 ---
 
 ## 2. Cloudflare R2 Setup
 
 ### Create Bucket
-1. Go to Cloudflare Dashboard > R2
-2. Create a bucket named `ai-videographer`
-3. Enable public access (or use presigned URLs)
-
-### Create API Token
-1. Go to R2 > Manage R2 API Tokens
-2. Create a token with read/write permissions
-3. Note the Access Key ID and Secret Access Key
+1. Cloudflare Dashboard → R2 → Create bucket: `ai-videographer`
+2. Enable public access or use signed URLs
 
 ### Configure CORS
-Add this CORS policy to your bucket:
-
 ```json
 [
   {
     "AllowedOrigins": ["http://localhost:3000", "https://your-domain.vercel.app"],
     "AllowedMethods": ["GET", "PUT", "POST", "DELETE", "HEAD"],
     "AllowedHeaders": ["*"],
-    "ExposeHeaders": ["ETag"],
     "MaxAgeSeconds": 3600
   }
 ]
 ```
 
-### Get Endpoints
-- **Endpoint**: `https://<account-id>.r2.cloudflarestorage.com`
-- **Public URL**: `https://pub-<bucket-id>.r2.dev` (if public access enabled)
+### Get Credentials
+- `R2_ENDPOINT`: `https://<account-id>.r2.cloudflarestorage.com`
+- `R2_ACCESS_KEY_ID`: From R2 API token
+- `R2_SECRET_ACCESS_KEY`: From R2 API token
+- `R2_BUCKET`: `ai-videographer`
+- `R2_PUBLIC_BASE_URL`: `https://pub-xxx.r2.dev`
 
 ---
 
 ## 3. Upstash Redis Setup
 
-1. Go to [upstash.com](https://upstash.com) and create a Redis database
-2. Select a region close to your Fly.io worker region
-3. Note the Redis URL (format: `redis://default:xxxxx@xxx.upstash.io:6379`)
+1. Create database at [upstash.com](https://upstash.com)
+2. Get connection URL: `rediss://default:xxx@xxx.upstash.io:6379`
 
 ---
 
-## 4. Vercel Deployment (Web App)
+## 4. AWS EC2 Worker Setup
+
+### Current Configuration
+- **Instance**: Amazon Linux on EC2
+- **Runtime**: Docker with Node.js 20 + FFmpeg
+- **Registry**: AWS ECR
+
+### Build and Push Worker Image
+
+```bash
+cd worker
+
+# Authenticate with ECR
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin <account-id>.dkr.ecr.us-east-1.amazonaws.com
+
+# Build for AMD64 (EC2)
+docker buildx build --platform linux/amd64 \
+  -t <account-id>.dkr.ecr.us-east-1.amazonaws.com/ai-videographer-worker:latest \
+  --push .
+```
+
+### Run on EC2
+
+```bash
+# Pull latest image
+docker pull <account-id>.dkr.ecr.us-east-1.amazonaws.com/ai-videographer-worker:latest
+
+# Run worker
+docker run -d \
+  --name render-worker \
+  --restart unless-stopped \
+  -e NODE_ENV=production \
+  -e NEXT_PUBLIC_SUPABASE_URL="..." \
+  -e SUPABASE_SERVICE_ROLE_KEY="..." \
+  -e REDIS_URL="rediss://..." \
+  -e R2_ENDPOINT="..." \
+  -e R2_ACCESS_KEY_ID="..." \
+  -e R2_SECRET_ACCESS_KEY="..." \
+  -e R2_BUCKET="ai-videographer" \
+  -e R2_PUBLIC_BASE_URL="..." \
+  -e FFMPEG_PATH=ffmpeg \
+  -e FFPROBE_PATH=ffprobe \
+  -e TEMP_DIR=/tmp/renders \
+  <account-id>.dkr.ecr.us-east-1.amazonaws.com/ai-videographer-worker:latest
+```
+
+### Verify Worker
+
+```bash
+docker logs -f render-worker
+# Should see: "Render worker started, waiting for jobs..."
+```
+
+---
+
+## 5. Vercel Deployment (Web App)
 
 ### Deploy
-```bash
-# Install Vercel CLI
-npm install -g vercel
 
-# Deploy
+```bash
+npm install -g vercel
 vercel
 ```
 
 ### Environment Variables
-Add these in Vercel Dashboard > Settings > Environment Variables:
+
+Add in Vercel Dashboard → Settings → Environment Variables:
 
 ```env
 # Supabase
 NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGci...
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGci...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+SUPABASE_SERVICE_ROLE_KEY=eyJ...
 
 # Cloudflare R2
 R2_ENDPOINT=https://xxx.r2.cloudflarestorage.com
@@ -124,104 +167,39 @@ R2_BUCKET=ai-videographer
 R2_PUBLIC_BASE_URL=https://pub-xxx.r2.dev
 
 # Redis
-REDIS_URL=redis://default:xxx@xxx.upstash.io:6379
-```
-
----
-
-## 5. Fly.io Deployment (Worker)
-
-### Install Fly CLI
-```bash
-curl -L https://fly.io/install.sh | sh
-fly auth login
-```
-
-### Create fly.toml
-Create `worker/fly.toml`:
-
-```toml
-app = "ai-videographer-worker"
-primary_region = "ord"  # Choose your region
-
-[build]
-  dockerfile = "Dockerfile"
-
-[env]
-  NODE_ENV = "production"
-  FFMPEG_PATH = "/usr/bin/ffmpeg"
-  FFPROBE_PATH = "/usr/bin/ffprobe"
-  TEMP_DIR = "/tmp/renders"
-
-[[vm]]
-  cpu_kind = "shared"
-  cpus = 2
-  memory_mb = 2048
-```
-
-### Deploy Worker
-```bash
-cd worker
-
-# Create app
-fly apps create ai-videographer-worker
-
-# Set secrets
-fly secrets set \
-  REDIS_URL="redis://default:xxx@xxx.upstash.io:6379" \
-  NEXT_PUBLIC_SUPABASE_URL="https://xxx.supabase.co" \
-  SUPABASE_SERVICE_ROLE_KEY="eyJhbGci..." \
-  R2_ENDPOINT="https://xxx.r2.cloudflarestorage.com" \
-  R2_ACCESS_KEY_ID="xxx" \
-  R2_SECRET_ACCESS_KEY="xxx" \
-  R2_BUCKET="ai-videographer" \
-  R2_PUBLIC_BASE_URL="https://pub-xxx.r2.dev"
-
-# Build and deploy
-npm run build
-fly deploy
-```
-
-### Scale Worker
-```bash
-# Scale to 1 machine (always running)
-fly scale count 1
-
-# Or use autoscaling for cost savings
-fly autoscale set min=0 max=3
+REDIS_URL=rediss://default:xxx@xxx.upstash.io:6379
 ```
 
 ---
 
 ## 6. Local Development
 
-### Start Services
-```bash
-# Start Redis and worker
-docker-compose up -d
-
-# Start Next.js dev server
-npm run dev
-```
-
 ### Environment Variables
-Create `.env.local`:
+
+Create `.env.local` in project root:
 
 ```env
-# Supabase
 NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGci...
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGci...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+SUPABASE_SERVICE_ROLE_KEY=eyJ...
 
-# Cloudflare R2
 R2_ENDPOINT=https://xxx.r2.cloudflarestorage.com
 R2_ACCESS_KEY_ID=xxx
 R2_SECRET_ACCESS_KEY=xxx
 R2_BUCKET=ai-videographer
 R2_PUBLIC_BASE_URL=https://pub-xxx.r2.dev
 
-# Redis (local)
 REDIS_URL=redis://localhost:6379
+```
+
+### Start Development
+
+```bash
+# Start local Redis (optional, can use Upstash)
+docker run -d -p 6379:6379 redis:7-alpine
+
+# Start Next.js
+npm run dev
 ```
 
 ---
@@ -229,59 +207,26 @@ REDIS_URL=redis://localhost:6379
 ## Troubleshooting
 
 ### Worker Not Processing Jobs
-1. Check Redis connection: `fly ssh console` then `redis-cli ping`
-2. Check logs: `fly logs`
-3. Ensure the worker is running: `fly status`
+1. Check logs: `docker logs render-worker`
+2. Verify Redis connection
+3. Ensure Supabase credentials are correct
 
 ### Upload Failures
 1. Check R2 CORS configuration
-2. Verify R2 credentials are correct
+2. Verify bucket permissions
 3. Check browser console for errors
 
 ### Render Failures
 1. Check worker logs for FFmpeg errors
-2. Ensure assets are accessible from worker
+2. Ensure assets are accessible
 3. Verify timeline JSON is valid
 
-### Database Issues
-1. Check Supabase logs
-2. Verify RLS policies are correct
-3. Ensure service role key has proper permissions
-
 ---
 
-## Monitoring
+## Future Improvements
 
-### Vercel
-- View function logs in Vercel Dashboard
-- Monitor API routes performance
-
-### Fly.io
-- `fly logs` for real-time logs
-- `fly status` for machine status
-- Set up alerts in Fly.io Dashboard
-
-### Upstash
-- Monitor Redis metrics in Upstash Dashboard
-- Set up alerts for queue depth
-
----
-
-## Cost Optimization
-
-1. **Fly.io Worker**: Use `fly autoscale` to scale to 0 when idle
-2. **Vercel**: Use ISR for static content
-3. **R2**: Set lifecycle rules to delete old renders
-4. **Upstash**: Use the free tier for low volume
-
----
-
-## Security Checklist
-
-- [ ] Enable RLS on all Supabase tables
-- [ ] Use environment variables for all secrets
-- [ ] Enable CORS only for your domains
-- [ ] Use presigned URLs for uploads (not public bucket)
-- [ ] Rotate API keys periodically
-- [ ] Enable Supabase auth email confirmation in production
-
+- [ ] GPU workers for faster rendering
+- [ ] Auto-scaling with ECS/Fargate
+- [ ] Job priority queues
+- [ ] Render preview streaming
+- [ ] Webhook notifications on completion
