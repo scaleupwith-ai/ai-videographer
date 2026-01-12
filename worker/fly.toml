@@ -1,0 +1,24 @@
+app = "ai-videographer-worker"
+primary_region = "ord"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  FFMPEG_PATH = "/usr/bin/ffmpeg"
+  FFPROBE_PATH = "/usr/bin/ffprobe"
+  TEMP_DIR = "/tmp/renders"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 2
+  memory_mb = 2048
+
+[processes]
+  worker = "node dist/index.js"
+
+[[mounts]]
+  source = "render_temp"
+  destination = "/tmp/renders"
+
