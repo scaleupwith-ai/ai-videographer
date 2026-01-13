@@ -17,7 +17,11 @@ interface ThemeContextValue {
   resolvedTheme: "light" | "dark";
 }
 
-const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
+const ThemeContext = createContext<ThemeContextValue>({
+  theme: "light",
+  setTheme: () => {},
+  resolvedTheme: "light",
+});
 
 export function ThemeProvider({
   children,
@@ -60,17 +64,14 @@ export function ThemeProvider({
     setThemeState(newTheme);
   };
 
-  // Prevent flash by not rendering until mounted
-  if (!mounted) {
-    return (
-      <div className="light">
-        {children}
-      </div>
-    );
-  }
+  const value = {
+    theme,
+    setTheme,
+    resolvedTheme,
+  };
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, resolvedTheme }}>
+    <ThemeContext.Provider value={value}>
       {children}
     </ThemeContext.Provider>
   );
@@ -78,9 +79,6 @@ export function ThemeProvider({
 
 export function useTheme() {
   const context = useContext(ThemeContext);
-  if (context === undefined) {
-    throw new Error("useTheme must be used within a ThemeProvider");
-  }
   return context;
 }
 
