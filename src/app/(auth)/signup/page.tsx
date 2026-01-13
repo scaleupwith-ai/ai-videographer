@@ -35,9 +35,14 @@ export default function SignUpPage() {
 
     try {
       const supabase = createClient();
-      const { error } = await supabase.auth.signUp({
+      
+      // Sign up with email confirmation disabled (auto-confirm)
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          emailRedirectTo: undefined, // No email confirmation needed
+        },
       });
 
       if (error) {
@@ -45,8 +50,28 @@ export default function SignUpPage() {
         return;
       }
 
-      toast.success("Account created! Check your email to confirm.");
-      router.push("/login");
+      // If user is created and session exists, they're auto-confirmed
+      if (data.session) {
+        toast.success("Account created!");
+        router.push("/app");
+        router.refresh();
+      } else if (data.user) {
+        // User created but needs confirmation (Supabase setting)
+        // Try to sign in directly anyway
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (signInError) {
+          toast.success("Account created! Please sign in.");
+          router.push("/login");
+        } else {
+          toast.success("Account created!");
+          router.push("/app");
+          router.refresh();
+        }
+      }
     } catch {
       toast.error("An unexpected error occurred");
     } finally {

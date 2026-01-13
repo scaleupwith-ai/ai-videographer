@@ -42,44 +42,6 @@ export default function LoginPage() {
     }
   };
 
-  // Demo login for development
-  const handleDemoLogin = async () => {
-    setLoading(true);
-    try {
-      const supabase = createClient();
-      const { error } = await supabase.auth.signInWithPassword({
-        email: "demo@example.com",
-        password: "demo123456",
-      });
-
-      if (error) {
-        // Try to sign up demo user if doesn't exist
-        const { error: signUpError } = await supabase.auth.signUp({
-          email: "demo@example.com",
-          password: "demo123456",
-        });
-        
-        if (signUpError) {
-          toast.error("Demo login failed. Please set up Supabase auth.");
-          return;
-        }
-        
-        // Try login again after signup
-        await supabase.auth.signInWithPassword({
-          email: "demo@example.com",
-          password: "demo123456",
-        });
-      }
-
-      router.push("/app");
-      router.refresh();
-    } catch {
-      toast.error("An unexpected error occurred");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-radial p-4">
       <div className="absolute inset-0 bg-grid-pattern opacity-20" />
@@ -123,25 +85,6 @@ export default function LoginPage() {
               Sign In
             </Button>
           </form>
-
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-border" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-card px-2 text-muted-foreground">Or</span>
-            </div>
-          </div>
-
-          <Button
-            variant="outline"
-            className="w-full"
-            onClick={handleDemoLogin}
-            disabled={loading}
-          >
-            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Try Demo Account
-          </Button>
 
           <p className="text-center text-sm text-muted-foreground mt-6">
             Don&apos;t have an account?{" "}
