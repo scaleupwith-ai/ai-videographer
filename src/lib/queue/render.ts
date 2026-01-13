@@ -6,13 +6,19 @@ let renderQueue: Queue | null = null;
 function getRenderQueue(): Queue {
   if (!renderQueue) {
     const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+    const url = new URL(redisUrl);
+    const useTls = redisUrl.startsWith("rediss://");
+    
+    console.log("Connecting to Redis:", url.hostname, "TLS:", useTls);
     
     renderQueue = new Queue("render", {
       connection: {
-        host: redisUrl.includes("://") ? new URL(redisUrl).hostname : "localhost",
-        port: redisUrl.includes("://") ? parseInt(new URL(redisUrl).port || "6379") : 6379,
-        password: redisUrl.includes("://") ? new URL(redisUrl).password || undefined : undefined,
+        host: url.hostname,
+        port: parseInt(url.port || "6379"),
+        password: url.password || undefined,
+        username: url.username || "default",
         maxRetriesPerRequest: null,
+        ...(useTls ? { tls: {} } : {}),
       },
       defaultJobOptions: {
         attempts: 3,
@@ -21,10 +27,10 @@ function getRenderQueue(): Queue {
           delay: 1000,
         },
         removeOnComplete: {
-          age: 24 * 3600, // Keep completed jobs for 24 hours
+          age: 24 * 3600,
         },
         removeOnFail: {
-          age: 7 * 24 * 3600, // Keep failed jobs for 7 days
+          age: 7 * 24 * 3600,
         },
       },
     });
@@ -43,9 +49,21 @@ export interface RenderJobPayload {
 export async function enqueueRenderJob(payload: RenderJobPayload): Promise<void> {
   const queue = getRenderQueue();
   
-  await queue.add("render-video", payload, {
-    jobId: payload.jobId, // Use DB job ID as BullMQ job ID for deduplication
+  console.log("Enqueueing render job:", payload.jobId);
+  
+  // Add with timeout to prevent hanging
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error("Redis connection timeout")), 10000);
   });
+  
+  await Promise.race([
+    queue.add("render-video", payload, {
+      jobId: payload.jobId,
+    }),
+    timeoutPromise,
+  ]);
+  
+  console.log("Render job enqueued successfully");
 }
 
 /**
