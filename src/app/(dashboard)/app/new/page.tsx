@@ -60,7 +60,7 @@ export default function NewVideoPage() {
   const [includeVoiceover, setIncludeVoiceover] = useState(true);
   const [selectedVoiceId, setSelectedVoiceId] = useState<string>("");
   
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -70,9 +70,7 @@ export default function NewVideoPage() {
 
   useEffect(() => {
     // Auto-scroll to bottom when new messages arrive
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   useEffect(() => {
@@ -220,9 +218,9 @@ export default function NewVideoPage() {
   const totalDuration = currentTimeline?.scenes.reduce((sum, s) => sum + (s.outSec - s.inSec), 0) || 0;
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-gradient-to-b from-background to-muted/20">
+    <div className="flex-1 flex flex-col h-full min-h-0 bg-gradient-to-b from-background to-muted/20">
       {/* Header */}
-      <div className="border-b bg-background/80 backdrop-blur-sm px-6 py-4">
+      <div className="shrink-0 border-b bg-background/80 backdrop-blur-sm px-6 py-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
             <Sparkles className="w-5 h-5 text-primary" />
@@ -237,10 +235,10 @@ export default function NewVideoPage() {
       </div>
 
       {/* Chat Area */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {/* Messages */}
-        <div className="flex-1 flex flex-col">
-          <ScrollArea ref={scrollRef} className="flex-1 p-6">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <ScrollArea className="flex-1 h-full p-6">
             {messages.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center px-4">
                 <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mb-6">
@@ -346,12 +344,13 @@ export default function NewVideoPage() {
                     </div>
                   </div>
                 )}
+                <div ref={messagesEndRef} />
               </div>
             )}
           </ScrollArea>
 
           {/* Input Area */}
-          <div className="border-t bg-background p-4">
+          <div className="shrink-0 border-t bg-background p-4">
             <div className="max-w-3xl mx-auto">
               {isGenerating ? (
                 <div className="p-6 rounded-xl bg-primary/5 border border-primary/20 text-center">
