@@ -1,142 +1,235 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import {
   Film,
-  Building2,
-  HardHat,
-  MessageSquare,
-  Megaphone,
-  ShoppingBag,
-  Monitor,
-  Smartphone,
-  Square,
   ArrowLeft,
-  ArrowRight,
-  Sparkles,
-  Loader2,
   Upload,
-  Check,
+  Loader2,
+  X,
+  Play,
+  GripVertical,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { Card, CardContent } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
+import { v4 as uuid } from "uuid";
 
-// Form schema
-const wizardSchema = z.object({
-  title: z.string().min(1, "Title is required").max(100),
-  type: z.enum(["product_promo", "real_estate", "construction", "testimonial", "announcement"]),
-  aspectRatio: z.enum(["landscape", "vertical", "square"]),
-  script: z.string().optional(),
-  brandPresetId: z.string().optional(),
-});
-
-type WizardData = z.infer<typeof wizardSchema>;
-
-const VIDEO_TYPES = [
-  { id: "product_promo", label: "Product Promo", icon: ShoppingBag, description: "Showcase your product features" },
-  { id: "real_estate", label: "Real Estate", icon: Building2, description: "Property tours and listings" },
-  { id: "construction", label: "Construction", icon: HardHat, description: "Project progress and updates" },
-  { id: "testimonial", label: "Testimonial", icon: MessageSquare, description: "Customer stories and reviews" },
-  { id: "announcement", label: "Announcement", icon: Megaphone, description: "News and updates" },
-];
-
-const ASPECT_RATIOS = [
-  { id: "landscape", label: "Landscape", icon: Monitor, description: "16:9 - YouTube, TV" },
-  { id: "vertical", label: "Vertical", icon: Smartphone, description: "9:16 - TikTok, Reels" },
-  { id: "square", label: "Square", icon: Square, description: "1:1 - Instagram, Facebook" },
-];
+interface UploadedVideo {
+  id: string;
+  file: File;
+  preview: string;
+  uploading: boolean;
+  uploaded: boolean;
+  assetId?: string;
+  progress: number;
+}
 
 export default function NewVideoPage() {
   const router = useRouter();
-  const [step, setStep] = useState(1);
-  const [loading, setLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [title, setTitle] = useState("");
+  const [videos, setVideos] = useState<UploadedVideo[]>([]);
+  const [creating, setCreating] = useState(false);
 
-  const form = useForm<WizardData>({
-    resolver: zodResolver(wizardSchema),
-    defaultValues: {
-      title: "",
-      type: "product_promo",
-      aspectRatio: "landscape",
-      script: "",
-    },
-  });
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files?.length) return;
 
-  const { watch, setValue, handleSubmit } = form;
-  const selectedType = watch("type");
-  const selectedAspectRatio = watch("aspectRatio");
+    const newVideos: UploadedVideo[] = Array.from(files)
+      .filter((file) => file.type.startsWith("video/"))
+      .map((file) => ({
+        id: uuid(),
+        file,
+        preview: URL.createObjectURL(file),
+        uploading: false,
+        uploaded: false,
+        progress: 0,
+      }));
 
-  const handleGenerate = async (data: WizardData) => {
-    setLoading(true);
+    if (newVideos.length === 0) {
+      toast.error("Please select video files");
+      return;
+    }
+
+    setVideos((prev) => [...prev, ...newVideos]);
+
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const removeVideo = (id: string) => {
+    setVideos((prev) => {
+      const video = prev.find((v) => v.id === id);
+      if (video?.preview) {
+        URL.revokeObjectURL(video.preview);
+      }
+      return prev.filter((v) => v.id !== id);
+    });
+  };
+
+  const uploadVideo = async (video: UploadedVideo): Promise<string | null> => {
     try {
+      // Get presigned upload URL
+      const urlRes = await fetch("/api/assets/upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: video.file.name,
+          mime: video.file.type,
+          kind: "video",
+        }),
+      });
+
+      if (!urlRes.ok) throw new Error("Failed to get upload URL");
+      const { uploadUrl, objectKey } = await urlRes.json();
+
+      // Upload to R2/S3
+      const uploadRes = await fetch(uploadUrl, {
+        method: "PUT",
+        body: video.file,
+        headers: { "Content-Type": video.file.type },
+      });
+
+      if (!uploadRes.ok) throw new Error("Failed to upload file");
+
+      // Complete upload (save to DB)
+      const completeRes = await fetch("/api/assets/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          objectKey,
+          filename: video.file.name,
+          mime: video.file.type,
+          kind: "video",
+          sizeBytes: video.file.size,
+        }),
+      });
+
+      if (!completeRes.ok) throw new Error("Failed to save asset");
+      const { asset } = await completeRes.json();
+
+      return asset.id;
+    } catch (error) {
+      console.error("Upload failed:", error);
+      return null;
+    }
+  };
+
+  const handleCreate = async () => {
+    if (!title.trim()) {
+      toast.error("Please enter a title");
+      return;
+    }
+
+    if (videos.length === 0) {
+      toast.error("Please upload at least one video");
+      return;
+    }
+
+    setCreating(true);
+
+    try {
+      // Upload all videos first
+      toast.info("Uploading videos...");
+      const assetIds: string[] = [];
+
+      for (let i = 0; i < videos.length; i++) {
+        const video = videos[i];
+        
+        setVideos((prev) =>
+          prev.map((v) =>
+            v.id === video.id ? { ...v, uploading: true, progress: 0 } : v
+          )
+        );
+
+        const assetId = await uploadVideo(video);
+        
+        if (assetId) {
+          assetIds.push(assetId);
+          setVideos((prev) =>
+            prev.map((v) =>
+              v.id === video.id
+                ? { ...v, uploading: false, uploaded: true, assetId, progress: 100 }
+                : v
+            )
+          );
+        } else {
+          toast.error(`Failed to upload ${video.file.name}`);
+          setVideos((prev) =>
+            prev.map((v) =>
+              v.id === video.id ? { ...v, uploading: false, progress: 0 } : v
+            )
+          );
+        }
+      }
+
+      if (assetIds.length === 0) {
+        toast.error("No videos were uploaded successfully");
+        setCreating(false);
+        return;
+      }
+
+      toast.info("Creating project...");
+
       // Create project
       const createRes = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: data.title,
-          type: data.type,
-          aspectRatio: data.aspectRatio,
+          title: title.trim(),
+          type: "product_promo",
+          aspectRatio: "landscape",
         }),
       });
 
-      if (!createRes.ok) {
-        throw new Error("Failed to create project");
-      }
-
+      if (!createRes.ok) throw new Error("Failed to create project");
       const { project } = await createRes.json();
 
-      // Generate plan (AI stub)
+      // Generate plan with the uploaded assets
+      toast.info("Generating timeline...");
       const planRes = await fetch(`/api/projects/${project.id}/generate-plan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          script: data.script,
-          assetIds: [], // No assets selected for MVP
+          script: "",
+          assetIds,
         }),
       });
 
-      if (!planRes.ok) {
-        throw new Error("Failed to generate plan");
+      if (!planRes.ok) throw new Error("Failed to generate plan");
+
+      // Start render
+      toast.info("Starting render...");
+      const renderRes = await fetch(`/api/projects/${project.id}/render`, {
+        method: "POST",
+      });
+
+      if (!renderRes.ok) {
+        // If render fails, still go to the project page
+        toast.warning("Render could not start, but project was created");
+        router.push(`/app/projects/${project.id}`);
+        return;
       }
 
-      toast.success("Project created! Add assets and generate your video.");
-      router.push(`/app/projects/${project.id}/edit`);
+      toast.success("Render started! Redirecting...");
+      router.push(`/app/projects/${project.id}`);
     } catch (error) {
-      console.error(error);
-      toast.error("Failed to create project");
+      console.error("Failed to create:", error);
+      toast.error("Failed to create video");
     } finally {
-      setLoading(false);
+      setCreating(false);
     }
   };
 
-  const nextStep = () => {
-    if (step === 1 && !selectedType) {
-      toast.error("Please select a video type");
-      return;
-    }
-    if (step === 2 && !selectedAspectRatio) {
-      toast.error("Please select a format");
-      return;
-    }
-    if (step === 3 && !watch("title")) {
-      toast.error("Please enter a title");
-      return;
-    }
-    setStep((s) => Math.min(s + 1, 4));
-  };
-
-  const prevStep = () => {
-    setStep((s) => Math.max(s - 1, 1));
-  };
+  const allUploaded = videos.length > 0 && videos.every((v) => v.uploaded);
+  const anyUploading = videos.some((v) => v.uploading);
 
   return (
     <div className="flex-1 overflow-auto">
@@ -148,223 +241,135 @@ export default function NewVideoPage() {
           </Button>
           <div>
             <h1 className="text-xl font-semibold">Create New Video</h1>
-            <p className="text-sm text-muted-foreground">Step {step} of 4</p>
+            <p className="text-sm text-muted-foreground">
+              Upload videos and render them together
+            </p>
           </div>
-        </div>
-        {/* Progress bar */}
-        <div className="h-1 bg-muted">
-          <div
-            className="h-full bg-primary transition-all duration-300"
-            style={{ width: `${(step / 4) * 100}%` }}
-          />
         </div>
       </header>
 
-      <div className="max-w-4xl mx-auto p-6">
-        <form onSubmit={handleSubmit(handleGenerate)}>
-          {/* Step 1: Video Type */}
-          {step === 1 && (
-            <div className="space-y-6">
-              <div className="text-center mb-8">
-                <h2 className="text-2xl font-semibold mb-2">What type of video?</h2>
-                <p className="text-muted-foreground">Choose a template that fits your content</p>
-              </div>
+      <div className="max-w-2xl mx-auto p-6 space-y-6">
+        {/* Title */}
+        <div className="space-y-2">
+          <Label htmlFor="title">Video Title</Label>
+          <Input
+            id="title"
+            placeholder="My Awesome Video"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            disabled={creating}
+          />
+        </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {VIDEO_TYPES.map((type) => (
-                  <Card
-                    key={type.id}
-                    className={cn(
-                      "cursor-pointer transition-all hover:border-primary/50",
-                      selectedType === type.id && "border-primary bg-primary/5"
+        {/* Upload Area */}
+        <div className="space-y-4">
+          <Label>Videos</Label>
+          
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="video/*"
+            multiple
+            className="hidden"
+            onChange={handleFileSelect}
+            disabled={creating}
+          />
+
+          {/* Upload Button / Drop Zone */}
+          <Card
+            className="border-dashed cursor-pointer hover:border-primary/50 transition-colors"
+            onClick={() => !creating && fileInputRef.current?.click()}
+          >
+            <CardContent className="py-8 text-center">
+              <Upload className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
+              <p className="text-sm font-medium">Click to upload videos</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                MP4, MOV, WebM supported
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Video List */}
+          {videos.length > 0 && (
+            <div className="space-y-2">
+              {videos.map((video, index) => (
+                <div
+                  key={video.id}
+                  className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card"
+                >
+                  <GripVertical className="w-4 h-4 text-muted-foreground" />
+                  
+                  {/* Thumbnail */}
+                  <div className="w-20 h-12 bg-muted rounded overflow-hidden shrink-0">
+                    <video
+                      src={video.preview}
+                      className="w-full h-full object-cover"
+                      muted
+                    />
+                  </div>
+
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">
+                      {index + 1}. {video.file.name}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {(video.file.size / (1024 * 1024)).toFixed(1)} MB
+                    </p>
+                    {video.uploading && (
+                      <Progress value={50} className="h-1 mt-1" />
                     )}
-                    onClick={() => setValue("type", type.id as WizardData["type"])}
-                  >
-                    <CardHeader>
-                      <div className="flex items-center gap-3">
-                        <div className={cn(
-                          "w-10 h-10 rounded-lg flex items-center justify-center",
-                          selectedType === type.id
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted"
-                        )}>
-                          <type.icon className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <CardTitle className="text-base">{type.label}</CardTitle>
-                          <CardDescription className="text-xs">{type.description}</CardDescription>
-                        </div>
-                      </div>
-                    </CardHeader>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          )}
+                  </div>
 
-          {/* Step 2: Aspect Ratio */}
-          {step === 2 && (
-            <div className="space-y-6">
-              <div className="text-center mb-8">
-                <h2 className="text-2xl font-semibold mb-2">Choose your format</h2>
-                <p className="text-muted-foreground">Select the aspect ratio for your video</p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-2xl mx-auto">
-                {ASPECT_RATIOS.map((ratio) => (
-                  <Card
-                    key={ratio.id}
-                    className={cn(
-                      "cursor-pointer transition-all hover:border-primary/50",
-                      selectedAspectRatio === ratio.id && "border-primary bg-primary/5"
-                    )}
-                    onClick={() => setValue("aspectRatio", ratio.id as WizardData["aspectRatio"])}
-                  >
-                    <CardContent className="pt-6 text-center">
-                      <div className={cn(
-                        "w-16 h-16 rounded-lg flex items-center justify-center mx-auto mb-4",
-                        selectedAspectRatio === ratio.id
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted"
-                      )}>
-                        <ratio.icon className="w-8 h-8" />
-                      </div>
-                      <h3 className="font-medium mb-1">{ratio.label}</h3>
-                      <p className="text-xs text-muted-foreground">{ratio.description}</p>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Step 3: Title & Script */}
-          {step === 3 && (
-            <div className="space-y-6 max-w-xl mx-auto">
-              <div className="text-center mb-8">
-                <h2 className="text-2xl font-semibold mb-2">Add details</h2>
-                <p className="text-muted-foreground">Give your video a title and optional script</p>
-              </div>
-
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="title">Video Title</Label>
-                  <Input
-                    id="title"
-                    placeholder="My Awesome Video"
-                    {...form.register("title")}
-                  />
-                  {form.formState.errors.title && (
-                    <p className="text-sm text-destructive">{form.formState.errors.title.message}</p>
+                  {/* Status */}
+                  {video.uploading ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                  ) : video.uploaded ? (
+                    <div className="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center">
+                      <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => removeVideo(video.id)}
+                      disabled={creating}
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
                   )}
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="script">Script or Bullet Points (optional)</Label>
-                  <Textarea
-                    id="script"
-                    placeholder="Enter your script, key points, or leave blank for AI to generate based on your assets..."
-                    rows={6}
-                    {...form.register("script")}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    The AI will use this to structure your video and create overlay text.
-                  </p>
-                </div>
-              </div>
+              ))}
             </div>
           )}
+        </div>
 
-          {/* Step 4: Review & Generate */}
-          {step === 4 && (
-            <div className="space-y-6 max-w-xl mx-auto">
-              <div className="text-center mb-8">
-                <h2 className="text-2xl font-semibold mb-2">Ready to create</h2>
-                <p className="text-muted-foreground">Review your settings and generate your video</p>
-              </div>
-
-              <Card>
-                <CardContent className="pt-6 space-y-4">
-                  <div className="flex justify-between items-center py-2 border-b border-border">
-                    <span className="text-muted-foreground">Title</span>
-                    <span className="font-medium">{watch("title") || "Untitled"}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-2 border-b border-border">
-                    <span className="text-muted-foreground">Type</span>
-                    <span className="font-medium">
-                      {VIDEO_TYPES.find((t) => t.id === selectedType)?.label}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center py-2 border-b border-border">
-                    <span className="text-muted-foreground">Format</span>
-                    <span className="font-medium">
-                      {ASPECT_RATIOS.find((r) => r.id === selectedAspectRatio)?.label}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center py-2">
-                    <span className="text-muted-foreground">Script</span>
-                    <span className="font-medium text-sm max-w-[200px] truncate">
-                      {watch("script") || "None provided"}
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-primary/5 border-primary/20">
-                <CardContent className="pt-6">
-                  <div className="flex items-start gap-4">
-                    <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center shrink-0">
-                      <Upload className="w-5 h-5 text-primary" />
-                    </div>
-                    <div>
-                      <h4 className="font-medium mb-1">Next: Add your media</h4>
-                      <p className="text-sm text-muted-foreground">
-                        After creating the project, you&apos;ll be able to upload your b-roll footage, 
-                        product shots, and other assets in the editor.
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+        {/* Create Button */}
+        <Button
+          className="w-full h-12 text-base"
+          onClick={handleCreate}
+          disabled={creating || videos.length === 0 || !title.trim()}
+        >
+          {creating ? (
+            <>
+              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+              {anyUploading ? "Uploading..." : "Creating..."}
+            </>
+          ) : (
+            <>
+              <Play className="w-5 h-5 mr-2" />
+              Upload & Render ({videos.length} video{videos.length !== 1 ? "s" : ""})
+            </>
           )}
+        </Button>
 
-          {/* Navigation buttons */}
-          <div className="flex justify-between mt-8 pt-6 border-t border-border">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={prevStep}
-              disabled={step === 1}
-            >
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back
-            </Button>
-
-            {step < 4 ? (
-              <Button type="button" onClick={nextStep}>
-                Next
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
-            ) : (
-              <Button type="submit" disabled={loading} className="gap-2">
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Creating...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4" />
-                    Create Project
-                  </>
-                )}
-              </Button>
-            )}
-          </div>
-        </form>
+        <p className="text-xs text-center text-muted-foreground">
+          Videos will be concatenated in order and rendered on the server
+        </p>
       </div>
     </div>
   );
 }
-

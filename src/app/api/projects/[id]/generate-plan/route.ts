@@ -8,16 +8,18 @@ interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
+interface AssetRow {
+  id: string;
+  kind: string;
+  duration_sec: number | null;
+  filename: string;
+}
+
 /**
- * AI Director Stub
+ * Generate timeline from assets
  * 
- * This is a simplified version that creates a timeline structure based on:
- * - Video type
- * - Script/bullets provided
- * - Available assets
- * 
- * In a production version, this would call an LLM API to intelligently
- * select scenes, write overlay text, and structure the video.
+ * If assetIds are provided, creates a simple concatenation timeline.
+ * Otherwise, uses video type templates.
  */
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
@@ -44,26 +46,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const body = await request.json();
     const { script, assetIds } = body;
 
-    // Get user's assets if specific IDs provided, otherwise get all
-    let assets = [];
-    if (assetIds && assetIds.length > 0) {
-      const { data } = await supabase
-        .from("media_assets")
-        .select("*")
-        .in("id", assetIds)
-        .eq("owner_id", user.id);
-      assets = data || [];
-    } else {
-      const { data } = await supabase
-        .from("media_assets")
-        .select("*")
-        .eq("owner_id", user.id)
-        .in("kind", ["video", "image"])
-        .order("created_at", { ascending: false })
-        .limit(10);
-      assets = data || [];
-    }
-
     // Create base timeline
     const timeline = createEmptyTimeline({
       id: project.id,
@@ -72,43 +54,41 @@ export async function POST(request: NextRequest, context: RouteContext) {
       aspectRatio: project.aspect_ratio as "landscape" | "vertical" | "square",
     });
 
-    // Generate scenes based on video type and script
     const scenes: Scene[] = [];
-    
-    // Parse script into bullet points (simple split)
-    const bullets = script
-      ? script.split(/[\n\r]+/).filter((line: string) => line.trim().length > 0)
-      : [];
 
-    // Video type specific scene generation
-    const videoTypeScenes = getVideoTypeTemplate(project.type, bullets);
+    // If specific asset IDs provided, create simple concatenation
+    if (assetIds && assetIds.length > 0) {
+      // Fetch assets in the order provided
+      const { data: assets } = await supabase
+        .from("media_assets")
+        .select("id, kind, duration_sec, filename")
+        .in("id", assetIds)
+        .eq("owner_id", user.id);
 
-    // Create scenes, assigning assets if available
-    for (let i = 0; i < videoTypeScenes.length; i++) {
-      const template = videoTypeScenes[i];
-      const asset = assets[i % (assets.length || 1)] || null;
-      
-      scenes.push(createScene({
-        id: uuid(),
-        assetId: asset?.id || null,
-        kind: asset?.kind === "image" ? "image" : "video",
-        durationSec: template.duration,
-      }));
+      // Sort assets to match the order of assetIds
+      const assetMap = new Map((assets || []).map((a: AssetRow) => [a.id, a]));
+      const orderedAssets = assetIds
+        .map((id: string) => assetMap.get(id))
+        .filter(Boolean) as AssetRow[];
 
-      // Update overlay text
-      if (scenes[i]) {
-        scenes[i].overlays = {
-          title: template.title,
-          subtitle: template.subtitle,
-          position: template.position as "center" | "top" | "bottom" | "lower_third" | "upper_third",
-          stylePreset: template.style as "boxed" | "lower_third" | "minimal",
-        };
-        scenes[i].transitionOut = i < videoTypeScenes.length - 1 ? "crossfade" : null;
+      // Create a scene for each asset
+      for (const asset of orderedAssets) {
+        const duration = asset.duration_sec || 5; // Default 5 seconds for images or if unknown
+        
+        scenes.push(createScene({
+          id: uuid(),
+          assetId: asset.id,
+          kind: asset.kind === "image" ? "image" : "video",
+          durationSec: duration,
+        }));
+
+        // No overlays for simple concatenation - just the raw videos
+        const lastScene = scenes[scenes.length - 1];
+        lastScene.overlays = undefined;
+        lastScene.transitionOut = null;
       }
-    }
-
-    // If no scenes generated, create a default opening scene
-    if (scenes.length === 0) {
+    } else {
+      // No assets provided - create placeholder scene
       scenes.push(createScene({
         id: uuid(),
         assetId: null,
@@ -117,7 +97,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       }));
       scenes[0].overlays = {
         title: project.title,
-        subtitle: "Add your media to get started",
+        subtitle: "Add media to get started",
         position: "center",
         stylePreset: "boxed",
       };
@@ -157,49 +137,3 @@ export async function POST(request: NextRequest, context: RouteContext) {
     );
   }
 }
-
-/**
- * Get scene templates based on video type
- */
-function getVideoTypeTemplate(videoType: string, bullets: string[]) {
-  const templates: Record<string, Array<{
-    title: string;
-    subtitle: string | null;
-    duration: number;
-    position: string;
-    style: string;
-  }>> = {
-    product_promo: [
-      { title: "Introducing", subtitle: bullets[0] || "Your Product", duration: 4, position: "center", style: "boxed" },
-      { title: "Key Features", subtitle: bullets[1] || null, duration: 5, position: "lower_third", style: "lower_third" },
-      { title: "Benefits", subtitle: bullets[2] || null, duration: 5, position: "lower_third", style: "lower_third" },
-      { title: "Get Started Today", subtitle: bullets[3] || "Visit our website", duration: 4, position: "center", style: "boxed" },
-    ],
-    real_estate: [
-      { title: "Property Tour", subtitle: bullets[0] || "Welcome", duration: 4, position: "center", style: "boxed" },
-      { title: "Living Space", subtitle: bullets[1] || null, duration: 5, position: "lower_third", style: "minimal" },
-      { title: "Kitchen", subtitle: bullets[2] || null, duration: 4, position: "lower_third", style: "minimal" },
-      { title: "Bedrooms", subtitle: bullets[3] || null, duration: 4, position: "lower_third", style: "minimal" },
-      { title: "Contact Us", subtitle: bullets[4] || "Schedule a viewing", duration: 4, position: "center", style: "boxed" },
-    ],
-    construction: [
-      { title: "Project Update", subtitle: bullets[0] || null, duration: 4, position: "center", style: "boxed" },
-      { title: "Progress", subtitle: bullets[1] || "Week overview", duration: 5, position: "lower_third", style: "lower_third" },
-      { title: "Milestones", subtitle: bullets[2] || null, duration: 5, position: "lower_third", style: "lower_third" },
-      { title: "Next Steps", subtitle: bullets[3] || null, duration: 4, position: "center", style: "boxed" },
-    ],
-    testimonial: [
-      { title: bullets[0] || "Customer Story", subtitle: null, duration: 5, position: "center", style: "boxed" },
-      { title: bullets[1] || "", subtitle: null, duration: 8, position: "lower_third", style: "minimal" },
-      { title: bullets[2] || "Thank You", subtitle: null, duration: 4, position: "center", style: "boxed" },
-    ],
-    announcement: [
-      { title: "Announcement", subtitle: bullets[0] || null, duration: 4, position: "center", style: "boxed" },
-      { title: bullets[1] || "Big News", subtitle: bullets[2] || null, duration: 5, position: "center", style: "boxed" },
-      { title: "Learn More", subtitle: bullets[3] || null, duration: 4, position: "center", style: "boxed" },
-    ],
-  };
-
-  return templates[videoType] || templates.product_promo;
-}
-
