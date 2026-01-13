@@ -67,8 +67,8 @@ export async function renderProject(
     const downloadStep = 30 / Math.max(assets.size, 1);
 
     for (const [assetId, asset] of assets) {
-      if (asset.public_url) {
-        const ext = path.extname(asset.filename) || getExtFromMime(asset.kind);
+      if (asset.url) {
+        const ext = path.extname(asset.filename) || getExtFromMime(asset.asset_type);
         const localPath = path.join(workDir, `asset_${assetId}${ext}`);
 
         await updateJobProgress(
@@ -77,7 +77,7 @@ export async function renderProject(
           `Downloading ${asset.filename}...`
         );
 
-        await downloadFromUrl(asset.public_url, localPath);
+        await downloadFromUrl(asset.url, localPath);
         localAssets.set(assetId, localPath);
         downloadProgress += downloadStep;
       }

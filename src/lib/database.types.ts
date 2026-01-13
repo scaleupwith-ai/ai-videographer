@@ -1,140 +1,223 @@
-// Database types for Supabase
-// Generated from schema - keep in sync with migrations
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
 
-export type ProjectStatus = "draft" | "rendering" | "finished" | "failed";
-export type AspectRatio = "landscape" | "vertical" | "square";
-export type AssetKind = "video" | "image" | "audio" | "srt" | "logo";
-export type OverlayStyle = "boxed" | "lower_third" | "minimal";
-export type RenderJobStatus = "queued" | "running" | "finished" | "failed";
-
-export interface Project {
-  id: string;
-  owner_id: string;
-  title: string;
-  type: string;
-  status: ProjectStatus;
-  aspect_ratio: AspectRatio;
-  fps: number;
-  resolution_w: number;
-  resolution_h: number;
-  timeline_json: TimelineV1 | null;
-  brand_preset_id: string | null;
-  output_url: string | null;
-  thumbnail_url: string | null;
-  duration_sec: number | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface MediaAsset {
-  id: string;
-  owner_id: string;
-  bucket: string;
-  object_key: string;
-  public_url: string | null;
-  kind: AssetKind;
-  filename: string;
-  mime_type: string;
-  size_bytes: number | null;
-  duration_sec: number | null;
-  width: number | null;
-  height: number | null;
-  thumbnail_url: string | null;
-  tags: string[];
-  metadata: Record<string, unknown>;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface BrandPreset {
-  id: string;
-  owner_id: string;
-  name: string;
-  logo_asset_id: string | null;
-  colors: {
-    primary: string;
-    secondary: string;
-    accent: string;
-    text: string;
-    background: string;
-  };
-  fonts: {
-    heading: string;
-    body: string;
-  };
-  safe_margins: {
-    top: number;
-    bottom: number;
-    left: number;
-    right: number;
-  };
-  overlay_style: OverlayStyle;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface RenderJob {
-  id: string;
-  project_id: string;
-  status: RenderJobStatus;
-  progress: number;
-  logs: string[];
-  error: string | null;
-  output_url: string | null;
-  thumbnail_url: string | null;
-  duration_sec: number | null;
-  size_bytes: number | null;
-  started_at: string | null;
-  finished_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-// Timeline JSON v1 type (imported from timeline module)
-import type { TimelineV1 } from "./timeline/v1";
-export type { TimelineV1 };
-
-// Database table types for Supabase client
 export interface Database {
   public: {
     Tables: {
       projects: {
-        Row: Project;
-        Insert: Omit<Project, "id" | "created_at" | "updated_at"> & {
-          id?: string;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: Partial<Omit<Project, "id" | "created_at">>;
-      };
+        Row: {
+          id: string
+          owner_id: string
+          title: string
+          description: string | null
+          timeline_json: Json | null
+          status: 'draft' | 'rendering' | 'finished' | 'failed'
+          thumbnail_url: string | null
+          output_url: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          owner_id: string
+          title: string
+          description?: string | null
+          timeline_json?: Json | null
+          status?: 'draft' | 'rendering' | 'finished' | 'failed'
+          thumbnail_url?: string | null
+          output_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          owner_id?: string
+          title?: string
+          description?: string | null
+          timeline_json?: Json | null
+          status?: 'draft' | 'rendering' | 'finished' | 'failed'
+          thumbnail_url?: string | null
+          output_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
       media_assets: {
-        Row: MediaAsset;
-        Insert: Omit<MediaAsset, "id" | "created_at" | "updated_at"> & {
-          id?: string;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: Partial<Omit<MediaAsset, "id" | "created_at">>;
-      };
+        Row: {
+          id: string
+          owner_id: string
+          filename: string
+          mime_type: string
+          size_bytes: number
+          storage_key: string
+          url: string
+          thumbnail_url: string | null
+          duration_sec: number | null
+          width: number | null
+          height: number | null
+          asset_type: 'video' | 'image' | 'audio'
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          owner_id: string
+          filename: string
+          mime_type: string
+          size_bytes: number
+          storage_key: string
+          url: string
+          thumbnail_url?: string | null
+          duration_sec?: number | null
+          width?: number | null
+          height?: number | null
+          asset_type: 'video' | 'image' | 'audio'
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          owner_id?: string
+          filename?: string
+          mime_type?: string
+          size_bytes?: number
+          storage_key?: string
+          url?: string
+          thumbnail_url?: string | null
+          duration_sec?: number | null
+          width?: number | null
+          height?: number | null
+          asset_type?: 'video' | 'image' | 'audio'
+          created_at?: string
+        }
+      }
       brand_presets: {
-        Row: BrandPreset;
-        Insert: Omit<BrandPreset, "id" | "created_at" | "updated_at"> & {
-          id?: string;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: Partial<Omit<BrandPreset, "id" | "created_at">>;
-      };
+        Row: {
+          id: string
+          owner_id: string
+          name: string
+          logo_asset_id: string | null
+          primary_color: string
+          secondary_color: string
+          font_family: string
+          logo_position: string
+          is_default: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          owner_id: string
+          name: string
+          logo_asset_id?: string | null
+          primary_color?: string
+          secondary_color?: string
+          font_family?: string
+          logo_position?: string
+          is_default?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          owner_id?: string
+          name?: string
+          logo_asset_id?: string | null
+          primary_color?: string
+          secondary_color?: string
+          font_family?: string
+          logo_position?: string
+          is_default?: boolean
+          created_at?: string
+        }
+      }
       render_jobs: {
-        Row: RenderJob;
-        Insert: Omit<RenderJob, "id" | "created_at" | "updated_at"> & {
-          id?: string;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: Partial<Omit<RenderJob, "id" | "created_at">>;
-      };
-    };
-  };
+        Row: {
+          id: string
+          project_id: string
+          status: 'queued' | 'processing' | 'completed' | 'failed'
+          progress: number
+          output_url: string | null
+          error: string | null
+          logs: Json | null
+          started_at: string | null
+          completed_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          status?: 'queued' | 'processing' | 'completed' | 'failed'
+          progress?: number
+          output_url?: string | null
+          error?: string | null
+          logs?: Json | null
+          started_at?: string | null
+          completed_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          project_id?: string
+          status?: 'queued' | 'processing' | 'completed' | 'failed'
+          progress?: number
+          output_url?: string | null
+          error?: string | null
+          logs?: Json | null
+          started_at?: string | null
+          completed_at?: string | null
+          created_at?: string
+        }
+      }
+      clips: {
+        Row: {
+          id: string
+          clip_link: string
+          duration_seconds: number
+          description: string | null
+          tags: string[]
+          thumbnail_url: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          clip_link: string
+          duration_seconds: number
+          description?: string | null
+          tags?: string[]
+          thumbnail_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          clip_link?: string
+          duration_seconds?: number
+          description?: string | null
+          tags?: string[]
+          thumbnail_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+    }
+    Functions: {
+      search_clips: {
+        Args: {
+          search_query?: string | null
+          tag_filter?: string[] | null
+          result_limit?: number
+        }
+        Returns: Database['public']['Tables']['clips']['Row'][]
+      }
+    }
+  }
 }
 
+export type Project = Database['public']['Tables']['projects']['Row']
+export type MediaAsset = Database['public']['Tables']['media_assets']['Row']
+export type BrandPreset = Database['public']['Tables']['brand_presets']['Row']
+export type RenderJob = Database['public']['Tables']['render_jobs']['Row']
+export type Clip = Database['public']['Tables']['clips']['Row']

@@ -23,6 +23,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 
 interface Project {
@@ -72,16 +73,19 @@ export function AppLayout({ children, projects = [] }: AppLayoutProps) {
           )}
         >
           {/* Logo */}
-          <div className="flex h-14 items-center justify-between px-4 border-b border-sidebar-border">
+          <div className="flex h-14 items-center justify-between px-3 border-b border-sidebar-border">
             {!collapsed && (
-              <Link href="/app" className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-                  <Film className="w-5 h-5 text-primary-foreground" />
-                </div>
-                <span className="font-semibold text-sidebar-foreground">
-                  AI Videographer
-                </span>
-              </Link>
+              <>
+                <Link href="/app" className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
+                    <Film className="w-5 h-5 text-primary-foreground" />
+                  </div>
+                  <span className="font-semibold text-sidebar-foreground">
+                    AI Videographer
+                  </span>
+                </Link>
+                <ThemeToggle />
+              </>
             )}
             {collapsed && (
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center mx-auto">
@@ -118,27 +122,19 @@ export function AppLayout({ children, projects = [] }: AppLayoutProps) {
             })}
           </nav>
 
-          {/* Create New Video Button - Centered */}
+          {/* Create New Video Button - Circle with + */}
           <div className="flex-1 flex items-center justify-center p-4">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   onClick={() => router.push("/app/new")}
-                  size={collapsed ? "icon" : "default"}
-                  className={cn(
-                    "bg-primary hover:bg-primary/90 text-primary-foreground font-semibold shadow-lg animate-pulse-glow transition-all",
-                    collapsed
-                      ? "w-12 h-12 rounded-full"
-                      : "w-full h-14 rounded-xl text-base gap-2"
-                  )}
+                  size="icon"
+                  className="w-14 h-14 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg animate-pulse-glow transition-all hover:scale-105"
                 >
-                  <Plus className={cn("shrink-0", collapsed ? "w-6 h-6" : "w-5 h-5")} />
-                  {!collapsed && "Create New Video"}
+                  <Plus className="w-7 h-7" />
                 </Button>
               </TooltipTrigger>
-              {collapsed && (
-                <TooltipContent side="right">Create New Video</TooltipContent>
-              )}
+              <TooltipContent side="right">Create New Video</TooltipContent>
             </Tooltip>
           </div>
 
