@@ -12,6 +12,7 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
+  CreditCard,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -60,6 +61,7 @@ export function AppLayout({ children, projects = [] }: AppLayoutProps) {
   const navItems = [
     { href: "/app", icon: FolderOpen, label: "Projects" },
     { href: "/app/library", icon: Library, label: "Library" },
+    { href: "/app/billing", icon: CreditCard, label: "Billing" },
   ];
 
   return (

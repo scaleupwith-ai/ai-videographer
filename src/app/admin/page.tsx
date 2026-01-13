@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { Plus, Trash2, Upload, Mic, Check, X, LogOut } from "lucide-react";
+import { Plus, Trash2, Mic, Check, X, LogOut, Gift, ToggleLeft, ToggleRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 
 interface Voice {
@@ -22,16 +22,28 @@ interface Voice {
   created_at: string;
 }
 
+interface PromoCode {
+  id: string;
+  code: string;
+  credits: number;
+  max_uses: number | null;
+  current_uses: number;
+  expires_at: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
 export default function AdminPage() {
-  const router = useRouter();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   
   const [voices, setVoices] = useState<Voice[]>([]);
+  const [promoCodes, setPromoCodes] = useState<PromoCode[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showNewVoice, setShowNewVoice] = useState(false);
+  const [showNewCode, setShowNewCode] = useState(false);
   
   // New voice form
   const [newVoice, setNewVoice] = useState({
@@ -42,12 +54,22 @@ export default function AdminPage() {
   });
   const [isCreating, setIsCreating] = useState(false);
 
+  // New promo code form
+  const [newCode, setNewCode] = useState({
+    code: "",
+    credits: "5",
+    max_uses: "",
+    expires_at: "",
+  });
+  const [isCreatingCode, setIsCreatingCode] = useState(false);
+
   // Check session on mount
   useEffect(() => {
     const session = sessionStorage.getItem("admin_authenticated");
     if (session === "true") {
       setIsAuthenticated(true);
       fetchVoices();
+      fetchPromoCodes();
     }
   }, []);
 
@@ -188,6 +210,93 @@ export default function AdminPage() {
     }
   };
 
+  // Promo code functions
+  const fetchPromoCodes = async () => {
+    try {
+      const response = await fetch("/api/admin/promo-codes");
+      if (response.ok) {
+        const data = await response.json();
+        setPromoCodes(data.codes || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch promo codes:", error);
+    }
+  };
+
+  const handleCreateCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCode.code || !newCode.credits) {
+      toast.error("Code and credits are required");
+      return;
+    }
+
+    setIsCreatingCode(true);
+    try {
+      const response = await fetch("/api/admin/promo-codes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: newCode.code,
+          credits: newCode.credits,
+          max_uses: newCode.max_uses || null,
+          expires_at: newCode.expires_at || null,
+        }),
+      });
+
+      if (response.ok) {
+        toast.success("Promo code created");
+        setNewCode({ code: "", credits: "5", max_uses: "", expires_at: "" });
+        setShowNewCode(false);
+        fetchPromoCodes();
+      } else {
+        const error = await response.json();
+        toast.error(error.error || "Failed to create promo code");
+      }
+    } catch {
+      toast.error("Failed to create promo code");
+    } finally {
+      setIsCreatingCode(false);
+    }
+  };
+
+  const handleDeleteCode = async (codeId: string) => {
+    if (!confirm("Are you sure you want to delete this promo code?")) return;
+
+    try {
+      const response = await fetch(`/api/admin/promo-codes/${codeId}`, {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        toast.success("Promo code deleted");
+        fetchPromoCodes();
+      } else {
+        toast.error("Failed to delete promo code");
+      }
+    } catch {
+      toast.error("Failed to delete promo code");
+    }
+  };
+
+  const handleToggleCodeActive = async (code: PromoCode) => {
+    try {
+      const response = await fetch(`/api/admin/promo-codes/${code.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_active: !code.is_active }),
+      });
+
+      if (response.ok) {
+        toast.success(`Code ${code.is_active ? "deactivated" : "activated"}`);
+        fetchPromoCodes();
+      } else {
+        toast.error("Failed to update promo code");
+      }
+    } catch {
+      toast.error("Failed to update promo code");
+    }
+  };
+
   // Login form
   if (!isAuthenticated) {
     return (
@@ -247,18 +356,31 @@ export default function AdminPage() {
       </header>
 
       <main className="container mx-auto px-4 py-8">
-        {/* Voices Section */}
-        <section>
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-2xl font-semibold">Voices</h2>
-              <p className="text-muted-foreground">Manage ElevenLabs voice profiles</p>
-            </div>
-            <Button onClick={() => setShowNewVoice(!showNewVoice)}>
-              {showNewVoice ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
-              {showNewVoice ? "Cancel" : "Add Voice"}
-            </Button>
-          </div>
+        <Tabs defaultValue="voices" className="space-y-6">
+          <TabsList>
+            <TabsTrigger value="voices" className="gap-2">
+              <Mic className="w-4 h-4" />
+              Voices
+            </TabsTrigger>
+            <TabsTrigger value="promo-codes" className="gap-2">
+              <Gift className="w-4 h-4" />
+              Promo Codes
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="voices">
+            {/* Voices Section */}
+            <section>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-2xl font-semibold">Voices</h2>
+                  <p className="text-muted-foreground">Manage ElevenLabs voice profiles</p>
+                </div>
+                <Button onClick={() => setShowNewVoice(!showNewVoice)}>
+                  {showNewVoice ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
+                  {showNewVoice ? "Cancel" : "Add Voice"}
+                </Button>
+              </div>
 
           {/* New Voice Form */}
           {showNewVoice && (
@@ -385,7 +507,152 @@ export default function AdminPage() {
               ))}
             </div>
           )}
-        </section>
+            </section>
+          </TabsContent>
+
+          <TabsContent value="promo-codes">
+            {/* Promo Codes Section */}
+            <section>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-2xl font-semibold">Promo Codes</h2>
+                  <p className="text-muted-foreground">Create and manage promotional codes for free credits</p>
+                </div>
+                <Button onClick={() => setShowNewCode(!showNewCode)}>
+                  {showNewCode ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
+                  {showNewCode ? "Cancel" : "Create Code"}
+                </Button>
+              </div>
+
+              {/* New Code Form */}
+              {showNewCode && (
+                <Card className="mb-6">
+                  <CardContent className="pt-6">
+                    <form onSubmit={handleCreateCode} className="space-y-4">
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="code">Code *</Label>
+                          <Input
+                            id="code"
+                            value={newCode.code}
+                            onChange={(e) => setNewCode({ ...newCode, code: e.target.value.toUpperCase() })}
+                            placeholder="e.g., WELCOME10"
+                            className="uppercase"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="credits">Credits to Grant *</Label>
+                          <Input
+                            id="credits"
+                            type="number"
+                            min="1"
+                            value={newCode.credits}
+                            onChange={(e) => setNewCode({ ...newCode, credits: e.target.value })}
+                            placeholder="5"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="max-uses">Max Uses (leave empty for unlimited)</Label>
+                          <Input
+                            id="max-uses"
+                            type="number"
+                            min="1"
+                            value={newCode.max_uses}
+                            onChange={(e) => setNewCode({ ...newCode, max_uses: e.target.value })}
+                            placeholder="Unlimited"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="expires">Expiration Date (optional)</Label>
+                          <Input
+                            id="expires"
+                            type="datetime-local"
+                            value={newCode.expires_at}
+                            onChange={(e) => setNewCode({ ...newCode, expires_at: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      <Button type="submit" disabled={isCreatingCode}>
+                        {isCreatingCode ? "Creating..." : "Create Promo Code"}
+                      </Button>
+                    </form>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Promo Codes List */}
+              {promoCodes.length === 0 ? (
+                <Card className="text-center py-12">
+                  <Gift className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">No promo codes yet. Create your first code!</p>
+                </Card>
+              ) : (
+                <div className="space-y-3">
+                  {promoCodes.map((code) => (
+                    <Card key={code.id} className={!code.is_active ? "opacity-60" : ""}>
+                      <CardContent className="py-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
+                              <Gift className="w-6 h-6 text-primary" />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <code className="font-mono font-bold text-lg">{code.code}</code>
+                                {!code.is_active && (
+                                  <Badge variant="secondary">Inactive</Badge>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
+                                <span>+{code.credits} credits</span>
+                                <span>•</span>
+                                <span>
+                                  {code.current_uses}/{code.max_uses ?? "∞"} uses
+                                </span>
+                                {code.expires_at && (
+                                  <>
+                                    <span>•</span>
+                                    <span>
+                                      Expires {new Date(code.expires_at).toLocaleDateString()}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleToggleCodeActive(code)}
+                              title={code.is_active ? "Deactivate" : "Activate"}
+                            >
+                              {code.is_active ? (
+                                <ToggleRight className="w-5 h-5 text-green-600" />
+                              ) : (
+                                <ToggleLeft className="w-5 h-5 text-muted-foreground" />
+                              )}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => handleDeleteCode(code.id)}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </section>
+          </TabsContent>
+        </Tabs>
       </main>
     </div>
   );

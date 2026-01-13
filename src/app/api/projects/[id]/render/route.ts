@@ -10,10 +10,27 @@ export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params;
     const supabase = await createClient();
+    const adminSupabase = createAdminClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Check user credits
+    const { data: userCredits } = await adminSupabase
+      .from("user_credits")
+      .select("credits")
+      .eq("user_id", user.id)
+      .single();
+
+    const currentCredits = userCredits?.credits ?? 0;
+
+    if (currentCredits < 1) {
+      return NextResponse.json(
+        { error: "Insufficient credits. You need at least 1 credit to render a video." },
+        { status: 402 }
+      );
     }
 
     // Get project
@@ -49,6 +66,23 @@ export async function POST(request: NextRequest, context: RouteContext) {
         { status: 409 }
       );
     }
+
+    // Deduct 1 credit
+    await adminSupabase
+      .from("user_credits")
+      .update({ credits: currentCredits - 1, updated_at: new Date().toISOString() })
+      .eq("user_id", user.id);
+
+    // Record the transaction
+    await adminSupabase
+      .from("credit_transactions")
+      .insert({
+        user_id: user.id,
+        amount: -1,
+        type: "render",
+        description: `Render: ${project.title}`,
+        reference_id: id,
+      });
 
     // Create render job record
     const { data: job, error: jobError } = await supabase
