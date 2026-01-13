@@ -54,6 +54,7 @@ export function buildFFmpegCommand(
   // Build filter graph
   const filterParts: string[] = [];
   const sceneLabels: string[] = [];
+  const audioLabels: string[] = [];
 
   // Process each scene
   for (let i = 0; i < scenes.length; i++) {
@@ -61,6 +62,7 @@ export function buildFFmpegCommand(
     const inputIdx = scene.assetId ? inputMap.get(scene.assetId) : null;
 
     let videoLabel = `scene${i}`;
+    let audioLabel = `audio${i}`;
 
     if (inputIdx !== null && inputIdx !== undefined) {
       // Trim and scale the input
@@ -71,6 +73,11 @@ export function buildFFmpegCommand(
             `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:black,` +
             `fps=${fps},setsar=1[${videoLabel}]`
         );
+        // Also process audio from video
+        filterParts.push(
+          `[${inputIdx}:a]atrim=start=${scene.inSec}:end=${scene.outSec},asetpts=PTS-STARTPTS[${audioLabel}]`
+        );
+        audioLabels.push(`[${audioLabel}]`);
       } else {
         // Image - loop for duration
         filterParts.push(
@@ -80,12 +87,21 @@ export function buildFFmpegCommand(
             `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:black,` +
             `fps=${fps},setsar=1,trim=duration=${scene.durationSec}[${videoLabel}]`
         );
+        // Generate silent audio for image duration
+        filterParts.push(
+          `anullsrc=r=48000:cl=stereo,atrim=duration=${scene.durationSec}[${audioLabel}]`
+        );
+        audioLabels.push(`[${audioLabel}]`);
       }
     } else {
-      // No asset - create black placeholder
+      // No asset - create black placeholder with silent audio
       filterParts.push(
         `color=c=black:s=${width}x${height}:r=${fps}:d=${scene.durationSec}[${videoLabel}]`
       );
+      filterParts.push(
+        `anullsrc=r=48000:cl=stereo,atrim=duration=${scene.durationSec}[${audioLabel}]`
+      );
+      audioLabels.push(`[${audioLabel}]`);
     }
 
     // Add text overlays
@@ -99,11 +115,17 @@ export function buildFFmpegCommand(
     sceneLabels.push(`[${videoLabel}]`);
   }
 
-  // Concatenate all scenes
+  // Concatenate all scenes (video and audio)
   if (sceneLabels.length > 1) {
     filterParts.push(`${sceneLabels.join("")}concat=n=${sceneLabels.length}:v=1:a=0[vconcat]`);
+    if (audioLabels.length > 0) {
+      filterParts.push(`${audioLabels.join("")}concat=n=${audioLabels.length}:v=0:a=1[aconcat]`);
+    }
   } else {
     filterParts.push(`${sceneLabels[0]}copy[vconcat]`);
+    if (audioLabels.length > 0) {
+      filterParts.push(`${audioLabels[0]}acopy[aconcat]`);
+    }
   }
 
   // Add logo overlay if present
@@ -122,7 +144,7 @@ export function buildFFmpegCommand(
   // Audio mixing
   const totalDuration = scenes.reduce((sum, s) => sum + s.durationSec, 0);
   let audioFilters: string[] = [];
-  let audioLabel = "";
+  let finalAudioLabel = audioLabels.length > 0 ? "aconcat" : "";
 
   if (musicInputIdx >= 0 || voiceoverInputIdx >= 0) {
     if (musicInputIdx >= 0 && voiceoverInputIdx >= 0) {
@@ -139,19 +161,19 @@ export function buildFFmpegCommand(
       audioFilters.push(
         `[music][vo]amix=inputs=2:duration=longest:dropout_transition=2[aout]`
       );
-      audioLabel = "aout";
+      finalAudioLabel = "aout";
     } else if (musicInputIdx >= 0) {
       const musicVol = globalSettings.music.volume;
       audioFilters.push(
         `[${musicInputIdx}:a]aloop=loop=-1:size=2e+09,atrim=duration=${totalDuration},volume=${musicVol}[aout]`
       );
-      audioLabel = "aout";
+      finalAudioLabel = "aout";
     } else if (voiceoverInputIdx >= 0) {
       const voVol = globalSettings.voiceover.volume;
       audioFilters.push(
         `[${voiceoverInputIdx}:a]volume=${voVol}[aout]`
       );
-      audioLabel = "aout";
+      finalAudioLabel = "aout";
     }
     filterParts.push(...audioFilters);
   }
@@ -161,12 +183,8 @@ export function buildFFmpegCommand(
 
   // Map outputs
   args.push("-map", `[${finalVideoLabel}]`);
-  if (audioLabel) {
-    args.push("-map", `[${audioLabel}]`);
-  } else {
-    // Add silent audio
-    args.push("-f", "lavfi", "-t", String(totalDuration), "-i", "anullsrc=r=48000:cl=stereo");
-    args.push("-shortest");
+  if (finalAudioLabel) {
+    args.push("-map", `[${finalAudioLabel}]`);
   }
 
   // Output settings
@@ -329,8 +347,9 @@ export function runFFmpeg(
       if (code === 0) {
         resolve();
       } else {
-        console.error("FFmpeg stderr:", stderr.slice(-2000));
-        reject(new Error(`FFmpeg exited with code ${code}`));
+        const lastStderr = stderr.slice(-1000);
+        console.error("FFmpeg stderr:", lastStderr);
+        reject(new Error(`FFmpeg exited with code ${code}: ${lastStderr}`));
       }
     });
 
