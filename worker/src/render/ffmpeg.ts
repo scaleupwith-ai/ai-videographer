@@ -51,18 +51,16 @@ export function buildFFmpegCommand(
     logoInputIdx = inputIndex++;
   }
 
-  // Build filter graph
+  // Build filter graph (video only for MVP - audio handled separately)
   const filterParts: string[] = [];
   const sceneLabels: string[] = [];
-  const audioLabels: string[] = [];
 
-  // Process each scene
+  // Process each scene (video only)
   for (let i = 0; i < scenes.length; i++) {
     const scene = scenes[i];
     const inputIdx = scene.assetId ? inputMap.get(scene.assetId) : null;
 
     let videoLabel = `scene${i}`;
-    let audioLabel = `audio${i}`;
 
     if (inputIdx !== null && inputIdx !== undefined) {
       // Trim and scale the input
@@ -73,11 +71,6 @@ export function buildFFmpegCommand(
             `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:black,` +
             `fps=${fps},setsar=1[${videoLabel}]`
         );
-        // Also process audio from video
-        filterParts.push(
-          `[${inputIdx}:a]atrim=start=${scene.inSec}:end=${scene.outSec},asetpts=PTS-STARTPTS[${audioLabel}]`
-        );
-        audioLabels.push(`[${audioLabel}]`);
       } else {
         // Image - loop for duration
         filterParts.push(
@@ -87,21 +80,12 @@ export function buildFFmpegCommand(
             `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:black,` +
             `fps=${fps},setsar=1,trim=duration=${scene.durationSec}[${videoLabel}]`
         );
-        // Generate silent audio for image duration
-        filterParts.push(
-          `anullsrc=r=48000:cl=stereo,atrim=duration=${scene.durationSec}[${audioLabel}]`
-        );
-        audioLabels.push(`[${audioLabel}]`);
       }
     } else {
-      // No asset - create black placeholder with silent audio
+      // No asset - create black placeholder
       filterParts.push(
         `color=c=black:s=${width}x${height}:r=${fps}:d=${scene.durationSec}[${videoLabel}]`
       );
-      filterParts.push(
-        `anullsrc=r=48000:cl=stereo,atrim=duration=${scene.durationSec}[${audioLabel}]`
-      );
-      audioLabels.push(`[${audioLabel}]`);
     }
 
     // Add text overlays
@@ -115,17 +99,11 @@ export function buildFFmpegCommand(
     sceneLabels.push(`[${videoLabel}]`);
   }
 
-  // Concatenate all scenes (video and audio)
+  // Concatenate all scenes (video only)
   if (sceneLabels.length > 1) {
     filterParts.push(`${sceneLabels.join("")}concat=n=${sceneLabels.length}:v=1:a=0[vconcat]`);
-    if (audioLabels.length > 0) {
-      filterParts.push(`${audioLabels.join("")}concat=n=${audioLabels.length}:v=0:a=1[aconcat]`);
-    }
   } else {
     filterParts.push(`${sceneLabels[0]}copy[vconcat]`);
-    if (audioLabels.length > 0) {
-      filterParts.push(`${audioLabels[0]}acopy[aconcat]`);
-    }
   }
 
   // Add logo overlay if present
@@ -141,41 +119,38 @@ export function buildFFmpegCommand(
     finalVideoLabel = "vlogo";
   }
 
-  // Audio mixing
+  // Audio mixing (only if music or voiceover provided)
   const totalDuration = scenes.reduce((sum, s) => sum + s.durationSec, 0);
-  let audioFilters: string[] = [];
-  let finalAudioLabel = audioLabels.length > 0 ? "aconcat" : "";
+  let finalAudioLabel = "";
 
   if (musicInputIdx >= 0 || voiceoverInputIdx >= 0) {
     if (musicInputIdx >= 0 && voiceoverInputIdx >= 0) {
       // Mix both with ducking (music under voiceover)
       const musicVol = globalSettings.music.volume;
       const voVol = globalSettings.voiceover.volume;
-      audioFilters.push(
+      filterParts.push(
         `[${musicInputIdx}:a]aloop=loop=-1:size=2e+09,atrim=duration=${totalDuration},volume=${musicVol}[music]`
       );
-      audioFilters.push(
+      filterParts.push(
         `[${voiceoverInputIdx}:a]volume=${voVol}[vo]`
       );
-      // Simple mix (for MVP - proper ducking would use sidechaincompress)
-      audioFilters.push(
+      filterParts.push(
         `[music][vo]amix=inputs=2:duration=longest:dropout_transition=2[aout]`
       );
       finalAudioLabel = "aout";
     } else if (musicInputIdx >= 0) {
       const musicVol = globalSettings.music.volume;
-      audioFilters.push(
+      filterParts.push(
         `[${musicInputIdx}:a]aloop=loop=-1:size=2e+09,atrim=duration=${totalDuration},volume=${musicVol}[aout]`
       );
       finalAudioLabel = "aout";
     } else if (voiceoverInputIdx >= 0) {
       const voVol = globalSettings.voiceover.volume;
-      audioFilters.push(
+      filterParts.push(
         `[${voiceoverInputIdx}:a]volume=${voVol}[aout]`
       );
       finalAudioLabel = "aout";
     }
-    filterParts.push(...audioFilters);
   }
 
   // Combine filter graph
@@ -198,8 +173,10 @@ export function buildFFmpegCommand(
   }
 
   args.push("-preset", "medium");
-  args.push("-c:a", "aac");
-  args.push("-b:a", `${globalSettings.export.audioKbps}k`);
+  if (finalAudioLabel) {
+    args.push("-c:a", "aac");
+    args.push("-b:a", `${globalSettings.export.audioKbps}k`);
+  }
   args.push("-movflags", "+faststart");
   args.push("-pix_fmt", "yuv420p");
 
