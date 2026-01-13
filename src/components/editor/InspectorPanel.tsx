@@ -107,10 +107,10 @@ export function InspectorPanel({ assets, brandPresets }: InspectorPanelProps) {
                   </div>
 
                   <Select
-                    value={selectedScene.assetId || ""}
+                    value={selectedScene.assetId || "__none__"}
                     onValueChange={(value) =>
                       updateSceneById(selectedScene.id, {
-                        assetId: value || null,
+                        assetId: value === "__none__" ? null : value,
                       })
                     }
                   >
@@ -118,29 +118,18 @@ export function InspectorPanel({ assets, brandPresets }: InspectorPanelProps) {
                       <SelectValue placeholder="Select media..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {selectedScene.kind === "video" ? (
-                        videoAssets.length > 0 ? (
-                          videoAssets.map((asset) => (
+                      <SelectItem value="__none__">No media</SelectItem>
+                      {selectedScene.kind === "video"
+                        ? videoAssets.map((asset) => (
                             <SelectItem key={asset.id} value={asset.id}>
                               {asset.filename}
                             </SelectItem>
                           ))
-                        ) : (
-                          <SelectItem value="" disabled>
-                            No videos uploaded
-                          </SelectItem>
-                        )
-                      ) : imageAssets.length > 0 ? (
-                        imageAssets.map((asset) => (
-                          <SelectItem key={asset.id} value={asset.id}>
-                            {asset.filename}
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <SelectItem value="" disabled>
-                          No images uploaded
-                        </SelectItem>
-                      )}
+                        : imageAssets.map((asset) => (
+                            <SelectItem key={asset.id} value={asset.id}>
+                              {asset.filename}
+                            </SelectItem>
+                          ))}
                     </SelectContent>
                   </Select>
 
@@ -316,16 +305,16 @@ export function InspectorPanel({ assets, brandPresets }: InspectorPanelProps) {
               </div>
 
               <Select
-                value={timeline.global.music.assetId || ""}
+                value={timeline.global.music.assetId || "__none__"}
                 onValueChange={(value) =>
-                  updateGlobalMusic({ assetId: value || null })
+                  updateGlobalMusic({ assetId: value === "__none__" ? null : value })
                 }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select music..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="__none__">None</SelectItem>
                   {audioAssets.map((asset) => (
                     <SelectItem key={asset.id} value={asset.id}>
                       {asset.filename}
@@ -359,16 +348,16 @@ export function InspectorPanel({ assets, brandPresets }: InspectorPanelProps) {
               </div>
 
               <Select
-                value={timeline.global.voiceover.assetId || ""}
+                value={timeline.global.voiceover.assetId || "__none__"}
                 onValueChange={(value) =>
-                  updateGlobalVoiceover({ assetId: value || null })
+                  updateGlobalVoiceover({ assetId: value === "__none__" ? null : value })
                 }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select voiceover..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="__none__">None</SelectItem>
                   {audioAssets.map((asset) => (
                     <SelectItem key={asset.id} value={asset.id}>
                       {asset.filename}
@@ -402,16 +391,16 @@ export function InspectorPanel({ assets, brandPresets }: InspectorPanelProps) {
               </div>
 
               <Select
-                value={timeline.global.brand.presetId || ""}
+                value={timeline.global.brand.presetId || "__none__"}
                 onValueChange={(value) =>
-                  updateGlobalBrand({ presetId: value || null })
+                  updateGlobalBrand({ presetId: value === "__none__" ? null : value })
                 }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select brand preset..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="__none__">None</SelectItem>
                   {brandPresets.map((preset) => (
                     <SelectItem key={preset.id} value={preset.id}>
                       {preset.name}
