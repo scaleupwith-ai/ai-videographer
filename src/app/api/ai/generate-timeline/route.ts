@@ -36,19 +36,24 @@ interface AITimeline {
   scenes: TimelineScene[];
 }
 
+interface RequestBody {
+  timeline: AITimeline;
+  projectTitle?: string;
+  voiceId?: string; // ElevenLabs voice ID if voiceover is wanted
+  includeVoiceover?: boolean;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
+    const adminSupabase = getAdminSupabase();
     
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { timeline, projectTitle } = await request.json() as { 
-      timeline: AITimeline;
-      projectTitle?: string;
-    };
+    const { timeline, projectTitle, voiceId, includeVoiceover } = await request.json() as RequestBody;
 
     if (!timeline || !timeline.scenes || timeline.scenes.length === 0) {
       return NextResponse.json({ error: "Invalid timeline" }, { status: 400 });
@@ -56,12 +61,13 @@ export async function POST(request: NextRequest) {
 
     // Fetch all the clips used in the timeline
     const clipIds = timeline.scenes.map(s => s.clipId);
-    const { data: clips, error: clipsError } = await supabase
+    const { data: clips, error: clipsError } = await adminSupabase
       .from("clips")
       .select("*")
       .in("id", clipIds);
 
     if (clipsError || !clips) {
+      console.error("Failed to fetch clips:", clipsError);
       return NextResponse.json({ error: "Failed to fetch clips" }, { status: 500 });
     }
 
@@ -69,6 +75,7 @@ export async function POST(request: NextRequest) {
     const clipMap = new Map(clips.map(c => [c.id, c]));
 
     // First, create media_assets entries for each clip (so FFmpeg worker can download them)
+    // Use adminSupabase to bypass RLS
     const assetPromises = clips.map(async (clip) => {
       const { fileId, directUrl } = parseGDriveLink(clip.clip_link);
       if (!fileId || !directUrl) {
@@ -76,7 +83,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Check if asset already exists for this clip
-      const { data: existingAsset } = await supabase
+      const { data: existingAsset } = await adminSupabase
         .from("media_assets")
         .select("id")
         .eq("storage_key", `gdrive:${fileId}`)
@@ -87,8 +94,8 @@ export async function POST(request: NextRequest) {
         return { clipId: clip.id, assetId: existingAsset.id };
       }
 
-      // Create new media asset entry
-      const { data: newAsset, error: assetError } = await supabase
+      // Create new media asset entry using admin client
+      const { data: newAsset, error: assetError } = await adminSupabase
         .from("media_assets")
         .insert({
           owner_id: user.id,
@@ -104,6 +111,7 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (assetError || !newAsset) {
+        console.error("Asset creation error:", assetError);
         throw new Error(`Failed to create asset for clip ${clip.id}`);
       }
 
@@ -137,12 +145,12 @@ export async function POST(request: NextRequest) {
 
     const totalDuration = scenes.reduce((sum, s) => sum + s.durationSec, 0);
 
-    // Generate voiceover if script is provided
+    // Generate voiceover if requested and script is provided
     let voiceoverAssetId: string | null = null;
     
-    if (timeline.voiceover && timeline.voiceover.trim()) {
+    if (includeVoiceover && timeline.voiceover && timeline.voiceover.trim() && voiceId) {
       try {
-        console.log("Generating voiceover...");
+        console.log("Generating voiceover with voice:", voiceId);
         
         // Validate voiceover duration won't exceed video duration
         const estimatedDuration = estimateSpeechDuration(timeline.voiceover);
@@ -150,65 +158,44 @@ export async function POST(request: NextRequest) {
           console.warn(`Voiceover estimated ${estimatedDuration}s may exceed video duration ${totalDuration}s`);
         }
 
-        // Get default voice
-        const adminSupabase = getAdminSupabase();
-        const { data: defaultVoice } = await adminSupabase
-          .from("voices")
-          .select("eleven_labs_id")
-          .eq("is_default", true)
+        const audioBuffer = await generateVoiceover({
+          text: timeline.voiceover,
+          voiceId,
+        });
+
+        // Upload to R2
+        const key = `voiceovers/${user.id}/${uuid()}.mp3`;
+        await s3Client.send(
+          new PutObjectCommand({
+            Bucket: process.env.R2_BUCKET,
+            Key: key,
+            Body: audioBuffer,
+            ContentType: "audio/mpeg",
+          })
+        );
+
+        const publicUrl = `${process.env.R2_PUBLIC_BASE_URL}/${key}`;
+
+        // Create media asset using admin client
+        const { data: voiceoverAsset, error: voiceoverError } = await adminSupabase
+          .from("media_assets")
+          .insert({
+            owner_id: user.id,
+            filename: `voiceover-${Date.now()}.mp3`,
+            mime_type: "audio/mpeg",
+            size_bytes: audioBuffer.length,
+            storage_key: key,
+            url: publicUrl,
+            asset_type: "audio",
+          })
+          .select()
           .single();
 
-        let voiceId = defaultVoice?.eleven_labs_id;
-        
-        if (!voiceId) {
-          const { data: firstVoice } = await adminSupabase
-            .from("voices")
-            .select("eleven_labs_id")
-            .limit(1)
-            .single();
-          voiceId = firstVoice?.eleven_labs_id;
-        }
-
-        if (voiceId) {
-          const audioBuffer = await generateVoiceover({
-            text: timeline.voiceover,
-            voiceId,
-          });
-
-          // Upload to R2
-          const key = `voiceovers/${user.id}/${uuid()}.mp3`;
-          await s3Client.send(
-            new PutObjectCommand({
-              Bucket: process.env.R2_BUCKET,
-              Key: key,
-              Body: audioBuffer,
-              ContentType: "audio/mpeg",
-            })
-          );
-
-          const publicUrl = `${process.env.R2_PUBLIC_BASE_URL}/${key}`;
-
-          // Create media asset
-          const { data: voiceoverAsset } = await supabase
-            .from("media_assets")
-            .insert({
-              owner_id: user.id,
-              filename: `voiceover-${Date.now()}.mp3`,
-              mime_type: "audio/mpeg",
-              size_bytes: audioBuffer.length,
-              storage_key: key,
-              url: publicUrl,
-              asset_type: "audio",
-            })
-            .select()
-            .single();
-
-          if (voiceoverAsset) {
-            voiceoverAssetId = voiceoverAsset.id;
-            console.log("Voiceover generated:", voiceoverAssetId);
-          }
-        } else {
-          console.warn("No voices configured, skipping voiceover generation");
+        if (voiceoverError) {
+          console.error("Failed to create voiceover asset:", voiceoverError);
+        } else if (voiceoverAsset) {
+          voiceoverAssetId = voiceoverAsset.id;
+          console.log("Voiceover generated:", voiceoverAssetId);
         }
       } catch (voiceError) {
         console.error("Failed to generate voiceover:", voiceError);
@@ -248,8 +235,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to generate valid timeline" }, { status: 500 });
     }
 
-    // Create the project
-    const { data: project, error: projectError } = await supabase
+    // Create the project using admin client
+    const { data: project, error: projectError } = await adminSupabase
       .from("projects")
       .insert({
         owner_id: user.id,

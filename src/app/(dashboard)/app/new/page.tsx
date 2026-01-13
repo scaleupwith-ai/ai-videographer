@@ -2,12 +2,22 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Send, Sparkles, Film, Loader2, ChevronRight } from "lucide-react";
+import { Send, Sparkles, Film, Loader2, ChevronRight, Mic, MicOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +39,14 @@ interface AITimeline {
   }[];
 }
 
+interface Voice {
+  id: string;
+  name: string;
+  eleven_labs_id: string;
+  profile_image_url: string | null;
+  is_default: boolean;
+}
+
 export default function NewVideoPage() {
   const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -36,8 +54,19 @@ export default function NewVideoPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentTimeline, setCurrentTimeline] = useState<AITimeline | null>(null);
+  
+  // Voiceover settings
+  const [voices, setVoices] = useState<Voice[]>([]);
+  const [includeVoiceover, setIncludeVoiceover] = useState(true);
+  const [selectedVoiceId, setSelectedVoiceId] = useState<string>("");
+  
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    // Fetch available voices
+    fetchVoices();
+  }, []);
 
   useEffect(() => {
     // Auto-scroll to bottom when new messages arrive
@@ -51,6 +80,26 @@ export default function NewVideoPage() {
     inputRef.current?.focus();
   }, []);
 
+  const fetchVoices = async () => {
+    try {
+      const response = await fetch("/api/voices");
+      if (response.ok) {
+        const data = await response.json();
+        setVoices(data.voices || []);
+        
+        // Set default voice
+        const defaultVoice = data.voices?.find((v: Voice) => v.is_default);
+        if (defaultVoice) {
+          setSelectedVoiceId(defaultVoice.eleven_labs_id);
+        } else if (data.voices?.length > 0) {
+          setSelectedVoiceId(data.voices[0].eleven_labs_id);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to fetch voices:", error);
+    }
+  };
+
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
 
@@ -63,6 +112,7 @@ export default function NewVideoPage() {
     setMessages(prev => [...prev, userMessage]);
     setInput("");
     setIsLoading(true);
+    setCurrentTimeline(null);
 
     try {
       const response = await fetch("/api/ai/chat", {
@@ -94,8 +144,7 @@ export default function NewVideoPage() {
 
       if (data.timeline) {
         setCurrentTimeline(data.timeline);
-        // Auto-generate video when timeline is returned
-        await autoGenerateVideo(data.timeline);
+        // Don't auto-generate - let user choose voiceover settings first
       }
     } catch (error) {
       console.error("Chat error:", error);
@@ -105,7 +154,9 @@ export default function NewVideoPage() {
     }
   };
 
-  const autoGenerateVideo = async (timeline: AITimeline) => {
+  const generateVideo = async () => {
+    if (!currentTimeline) return;
+    
     setIsGenerating(true);
     toast.info("Creating your video...");
 
@@ -114,8 +165,10 @@ export default function NewVideoPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          timeline,
-          projectTitle: timeline.title,
+          timeline: currentTimeline,
+          projectTitle: currentTimeline.title,
+          includeVoiceover,
+          voiceId: includeVoiceover ? selectedVoiceId : undefined,
         }),
       });
 
@@ -132,6 +185,12 @@ export default function NewVideoPage() {
       });
 
       if (!renderResponse.ok) {
+        const renderError = await renderResponse.json();
+        if (renderResponse.status === 402) {
+          toast.error("Insufficient credits. Add credits in Billing.");
+          router.push("/app/billing");
+          return;
+        }
         toast.warning("Project created but render failed to start");
       } else {
         toast.success("Video rendering started!");
@@ -139,8 +198,9 @@ export default function NewVideoPage() {
 
       router.push(`/app/projects/${projectId}`);
     } catch (error) {
-      console.error("Auto-generate error:", error);
+      console.error("Generate error:", error);
       toast.error(error instanceof Error ? error.message : "Failed to generate video");
+    } finally {
       setIsGenerating(false);
     }
   };
@@ -156,6 +216,8 @@ export default function NewVideoPage() {
     // Remove the timeline JSON block from display
     return content.replace(/```timeline\n[\s\S]*?\n```/g, "").trim();
   };
+
+  const totalDuration = currentTimeline?.scenes.reduce((sum, s) => sum + (s.outSec - s.inSec), 0) || 0;
 
   return (
     <div className="flex-1 flex flex-col h-full bg-gradient-to-b from-background to-muted/20">
@@ -269,7 +331,7 @@ export default function NewVideoPage() {
                     )}
                   </div>
                 ))}
-                {(isLoading || isGenerating) && (
+                {isLoading && (
                   <div className="flex gap-3">
                     <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                       <Sparkles className="w-4 h-4 text-primary" />
@@ -278,7 +340,7 @@ export default function NewVideoPage() {
                       <div className="flex items-center gap-2">
                         <Loader2 className="w-4 h-4 animate-spin" />
                         <span className="text-sm text-muted-foreground">
-                          {isGenerating ? "Creating your video..." : "Finding the perfect clips..."}
+                          Finding the perfect clips...
                         </span>
                       </div>
                     </div>
@@ -296,8 +358,98 @@ export default function NewVideoPage() {
                   <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3 text-primary" />
                   <p className="font-medium">Creating your video...</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Generating voiceover and preparing render
+                    {includeVoiceover ? "Generating voiceover and preparing render" : "Preparing render"}
                   </p>
+                </div>
+              ) : currentTimeline ? (
+                <div className="space-y-4">
+                  {/* Voiceover Settings */}
+                  <Card className="p-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        {includeVoiceover ? (
+                          <Mic className="w-5 h-5 text-primary" />
+                        ) : (
+                          <MicOff className="w-5 h-5 text-muted-foreground" />
+                        )}
+                        <div>
+                          <Label htmlFor="voiceover-toggle" className="font-medium">
+                            Include Voiceover
+                          </Label>
+                          <p className="text-xs text-muted-foreground">
+                            AI-generated voice narration for your video
+                          </p>
+                        </div>
+                      </div>
+                      <Switch
+                        id="voiceover-toggle"
+                        checked={includeVoiceover}
+                        onCheckedChange={setIncludeVoiceover}
+                      />
+                    </div>
+
+                    {includeVoiceover && (
+                      <div className="space-y-3">
+                        <Label className="text-sm text-muted-foreground">Choose Voice</Label>
+                        {voices.length === 0 ? (
+                          <p className="text-sm text-muted-foreground italic">
+                            No voices configured. Add voices in the admin panel.
+                          </p>
+                        ) : (
+                          <Select value={selectedVoiceId} onValueChange={setSelectedVoiceId}>
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select a voice" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {voices.map((voice) => (
+                                <SelectItem key={voice.id} value={voice.eleven_labs_id}>
+                                  <div className="flex items-center gap-2">
+                                    <Avatar className="w-6 h-6">
+                                      <AvatarImage src={voice.profile_image_url || undefined} />
+                                      <AvatarFallback className="text-[10px]">
+                                        {voice.name.slice(0, 2).toUpperCase()}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <span>{voice.name}</span>
+                                    {voice.is_default && (
+                                      <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                                        Default
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+
+                        {currentTimeline.voiceover && (
+                          <div className="p-3 rounded-lg bg-muted/50 text-sm">
+                            <p className="text-xs font-medium text-muted-foreground mb-1">Script preview:</p>
+                            <p className="italic text-muted-foreground line-clamp-2">
+                              &ldquo;{currentTimeline.voiceover}&rdquo;
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </Card>
+
+                  {/* Generate Button */}
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-muted-foreground">
+                      <span className="font-medium">{currentTimeline.scenes.length}</span> clips •{" "}
+                      <span className="font-medium">{Math.round(totalDuration)}</span>s total
+                    </div>
+                    <Button
+                      onClick={generateVideo}
+                      size="lg"
+                      disabled={includeVoiceover && (!selectedVoiceId || voices.length === 0)}
+                    >
+                      <Film className="w-4 h-4 mr-2" />
+                      Generate Video
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <>
@@ -326,7 +478,7 @@ export default function NewVideoPage() {
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground mt-2 text-center">
-                    Describe your video → AI creates timeline + voiceover → Video renders automatically
+                    Describe your video → Choose voiceover settings → Generate
                   </p>
                 </>
               )}
