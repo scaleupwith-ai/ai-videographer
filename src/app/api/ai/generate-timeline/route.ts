@@ -262,7 +262,7 @@ export async function POST(request: NextRequest) {
       .insert({
         owner_id: user.id,
         title: projectTitle || timeline.title || "AI Generated Video",
-        description: `AI-curated video with ${scenes.length} clips`,
+        type: "ai_generated",
         timeline_json: timelineJson,
         status: "draft",
       })
