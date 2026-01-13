@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Send, Sparkles, Film, Loader2, Play, ChevronRight } from "lucide-react";
+import { Send, Sparkles, Film, Loader2, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
@@ -94,6 +94,8 @@ export default function NewVideoPage() {
 
       if (data.timeline) {
         setCurrentTimeline(data.timeline);
+        // Auto-generate video when timeline is returned
+        await autoGenerateVideo(data.timeline);
       }
     } catch (error) {
       console.error("Chat error:", error);
@@ -103,29 +105,17 @@ export default function NewVideoPage() {
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  };
-
-  const generateVideo = async () => {
-    if (!currentTimeline) {
-      toast.error("No timeline to generate");
-      return;
-    }
-
+  const autoGenerateVideo = async (timeline: AITimeline) => {
     setIsGenerating(true);
+    toast.info("Creating your video...");
 
     try {
-      // Generate the timeline and create project
       const response = await fetch("/api/ai/generate-timeline", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          timeline: currentTimeline,
-          projectTitle: currentTimeline.title,
+          timeline,
+          projectTitle: timeline.title,
         }),
       });
 
@@ -142,18 +132,23 @@ export default function NewVideoPage() {
       });
 
       if (!renderResponse.ok) {
-        // Project created but render failed - still redirect
         toast.warning("Project created but render failed to start");
       } else {
-        toast.success("Video generation started!");
+        toast.success("Video rendering started!");
       }
 
       router.push(`/app/projects/${projectId}`);
     } catch (error) {
-      console.error("Generate error:", error);
+      console.error("Auto-generate error:", error);
       toast.error(error instanceof Error ? error.message : "Failed to generate video");
-    } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
     }
   };
 
@@ -195,9 +190,9 @@ export default function NewVideoPage() {
                 </p>
                 <div className="grid gap-2 w-full max-w-md">
                   {[
-                    "Create a 30-second tech product showcase",
-                    "Make an inspiring motivational video about success",
-                    "Build a travel montage of city life",
+                    "30-second tech product showcase with modern visuals",
+                    "Inspiring 45-second motivational video about success",
+                    "Quick 20-second social media ad for a startup",
                   ].map((suggestion) => (
                     <button
                       key={suggestion}
@@ -274,7 +269,7 @@ export default function NewVideoPage() {
                     )}
                   </div>
                 ))}
-                {isLoading && (
+                {(isLoading || isGenerating) && (
                   <div className="flex gap-3">
                     <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                       <Sparkles className="w-4 h-4 text-primary" />
@@ -282,7 +277,9 @@ export default function NewVideoPage() {
                     <div className="rounded-2xl px-4 py-3 bg-card border">
                       <div className="flex items-center gap-2">
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        <span className="text-sm text-muted-foreground">Thinking...</span>
+                        <span className="text-sm text-muted-foreground">
+                          {isGenerating ? "Creating your video..." : "Finding the perfect clips..."}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -294,62 +291,45 @@ export default function NewVideoPage() {
           {/* Input Area */}
           <div className="border-t bg-background p-4">
             <div className="max-w-3xl mx-auto">
-              {currentTimeline && (
-                <div className="mb-4 p-4 rounded-xl bg-primary/5 border border-primary/20">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                        <Play className="w-5 h-5 text-primary" />
-                      </div>
-                      <div>
-                        <p className="font-medium">{currentTimeline.title}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {currentTimeline.scenes.length} clips ready to render
-                        </p>
-                      </div>
-                    </div>
-                    <Button 
-                      onClick={generateVideo} 
-                      disabled={isGenerating}
-                      className="gap-2"
+              {isGenerating ? (
+                <div className="p-6 rounded-xl bg-primary/5 border border-primary/20 text-center">
+                  <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3 text-primary" />
+                  <p className="font-medium">Creating your video...</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Generating voiceover and preparing render
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex gap-3">
+                    <Textarea
+                      ref={inputRef}
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      placeholder="Describe the video you want to create..."
+                      className="min-h-[52px] max-h-32 resize-none"
+                      rows={1}
+                      disabled={isLoading}
+                    />
+                    <Button
+                      onClick={sendMessage}
+                      disabled={!input.trim() || isLoading}
+                      size="icon"
+                      className="h-[52px] w-[52px] shrink-0"
                     >
-                      {isGenerating ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Generating...
-                        </>
+                      {isLoading ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
                       ) : (
-                        <>
-                          <Sparkles className="w-4 h-4" />
-                          Generate Video
-                        </>
+                        <Send className="w-5 h-5" />
                       )}
                     </Button>
                   </div>
-                </div>
+                  <p className="text-xs text-muted-foreground mt-2 text-center">
+                    Describe your video → AI creates timeline + voiceover → Video renders automatically
+                  </p>
+                </>
               )}
-              <div className="flex gap-3">
-                <Textarea
-                  ref={inputRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Describe the video you want to create..."
-                  className="min-h-[52px] max-h-32 resize-none"
-                  rows={1}
-                />
-                <Button
-                  onClick={sendMessage}
-                  disabled={!input.trim() || isLoading}
-                  size="icon"
-                  className="h-[52px] w-[52px] shrink-0"
-                >
-                  <Send className="w-5 h-5" />
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground mt-2 text-center">
-                AI will search your clip library and suggest the best b-roll for your video
-              </p>
             </div>
           </div>
         </div>
