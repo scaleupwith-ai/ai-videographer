@@ -27,9 +27,9 @@ export interface Project {
 export interface MediaAsset {
   id: string;
   owner_id: string;
-  storage_key: string;
-  url: string;
-  asset_type: string;
+  object_key: string;
+  public_url: string | null;
+  kind: string;
   filename: string;
   duration_sec: number | null;
 }
