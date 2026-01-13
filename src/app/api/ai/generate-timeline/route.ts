@@ -1,7 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { parseGDriveLink, getDownloadUrl } from "@/lib/gdrive";
 import { TimelineV1Schema } from "@/lib/timeline/v1";
+import { generateVoiceover, estimateSpeechDuration } from "@/lib/elevenlabs";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { v4 as uuid } from "uuid";
+
+const s3Client = new S3Client({
+  region: "auto",
+  endpoint: process.env.R2_ENDPOINT,
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+  },
+});
+
+function getAdminSupabase() {
+  return createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 interface TimelineScene {
   clipId: string;
@@ -12,6 +32,7 @@ interface TimelineScene {
 
 interface AITimeline {
   title: string;
+  voiceover?: string;
   scenes: TimelineScene[];
 }
 
@@ -116,6 +137,85 @@ export async function POST(request: NextRequest) {
 
     const totalDuration = scenes.reduce((sum, s) => sum + s.durationSec, 0);
 
+    // Generate voiceover if script is provided
+    let voiceoverAssetId: string | null = null;
+    
+    if (timeline.voiceover && timeline.voiceover.trim()) {
+      try {
+        console.log("Generating voiceover...");
+        
+        // Validate voiceover duration won't exceed video duration
+        const estimatedDuration = estimateSpeechDuration(timeline.voiceover);
+        if (estimatedDuration > totalDuration) {
+          console.warn(`Voiceover estimated ${estimatedDuration}s may exceed video duration ${totalDuration}s`);
+        }
+
+        // Get default voice
+        const adminSupabase = getAdminSupabase();
+        const { data: defaultVoice } = await adminSupabase
+          .from("voices")
+          .select("eleven_labs_id")
+          .eq("is_default", true)
+          .single();
+
+        let voiceId = defaultVoice?.eleven_labs_id;
+        
+        if (!voiceId) {
+          const { data: firstVoice } = await adminSupabase
+            .from("voices")
+            .select("eleven_labs_id")
+            .limit(1)
+            .single();
+          voiceId = firstVoice?.eleven_labs_id;
+        }
+
+        if (voiceId) {
+          const audioBuffer = await generateVoiceover({
+            text: timeline.voiceover,
+            voiceId,
+          });
+
+          // Upload to R2
+          const key = `voiceovers/${user.id}/${uuid()}.mp3`;
+          await s3Client.send(
+            new PutObjectCommand({
+              Bucket: process.env.R2_BUCKET,
+              Key: key,
+              Body: audioBuffer,
+              ContentType: "audio/mpeg",
+            })
+          );
+
+          const publicUrl = `${process.env.R2_PUBLIC_BASE_URL}/${key}`;
+
+          // Create media asset
+          const { data: voiceoverAsset } = await supabase
+            .from("media_assets")
+            .insert({
+              owner_id: user.id,
+              filename: `voiceover-${Date.now()}.mp3`,
+              mime_type: "audio/mpeg",
+              size_bytes: audioBuffer.length,
+              storage_key: key,
+              url: publicUrl,
+              asset_type: "audio",
+            })
+            .select()
+            .single();
+
+          if (voiceoverAsset) {
+            voiceoverAssetId = voiceoverAsset.id;
+            console.log("Voiceover generated:", voiceoverAssetId);
+          }
+        } else {
+          console.warn("No voices configured, skipping voiceover generation");
+        }
+      } catch (voiceError) {
+        console.error("Failed to generate voiceover:", voiceError);
+        // Continue without voiceover - don't fail the whole request
+      }
+    }
+
     const timelineJson = {
       version: 1,
       project: {
@@ -126,7 +226,7 @@ export async function POST(request: NextRequest) {
       scenes,
       global: {
         music: { assetId: null, volume: 0.3 },
-        voiceover: { assetId: null, volume: 1.0 },
+        voiceover: { assetId: voiceoverAssetId, volume: 1.0 },
         brand: {
           logoAssetId: null,
           logoPosition: "top-right",

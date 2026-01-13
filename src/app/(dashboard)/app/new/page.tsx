@@ -20,6 +20,7 @@ interface Message {
 
 interface AITimeline {
   title: string;
+  voiceover?: string;
   scenes: {
     clipId: string;
     description: string;
@@ -243,6 +244,12 @@ export default function NewVideoPage() {
                               {message.timeline.scenes.length} clips
                             </Badge>
                           </div>
+                          {message.timeline.voiceover && (
+                            <div className="mb-3 p-3 rounded-lg bg-background/50 border">
+                              <p className="text-xs font-medium text-muted-foreground mb-1">🎙️ Voiceover Script</p>
+                              <p className="text-sm italic">&ldquo;{message.timeline.voiceover}&rdquo;</p>
+                            </div>
+                          )}
                           <div className="space-y-2">
                             {message.timeline.scenes.slice(0, 3).map((scene, i) => (
                               <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground">
