@@ -129,18 +129,19 @@ export async function POST(request: NextRequest) {
       
       return {
         id: `scene-${index + 1}`,
-        order: index,
         assetId: assetId || null,
         kind: "video" as const,
         inSec: scene.inSec,
         outSec: scene.outSec,
         durationSec: scene.outSec - scene.inSec,
+        cropMode: "cover" as const,
         overlays: {
           title: null,
           subtitle: null,
-          position: "lower_third",
-          stylePreset: "minimal",
+          position: "lower_third" as const,
+          stylePreset: "minimal" as const,
         },
+        transitionOut: null,
       };
     });
 
@@ -205,28 +206,46 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Generate a unique project ID
+    const projectId = uuid();
+
     const timelineJson = {
-      version: 1,
+      version: 1 as const,
       project: {
+        id: projectId,
+        title: projectTitle || timeline.title || "AI Generated Video",
+        type: "ai_generated",
+        aspectRatio: "landscape" as const,
         resolution: { width: 1920, height: 1080 },
         fps: 30,
-        durationSec: totalDuration,
       },
       scenes,
       global: {
         music: { assetId: null, volume: 0.3 },
         voiceover: { assetId: voiceoverAssetId, volume: 1.0 },
+        captions: { enabled: false, burnIn: false, srtAssetId: null },
         brand: {
+          presetId: null,
           logoAssetId: null,
-          logoPosition: "top-right",
+          logoPosition: "top-right" as const,
           logoSize: 80,
+          colors: {
+            primary: "#00b4d8",
+            secondary: "#0077b6",
+            accent: "#ff6b6b",
+            text: "#ffffff",
+          },
+          safeMargins: { top: 50, bottom: 50, left: 50, right: 50 },
         },
         export: {
-          codec: "h264",
+          codec: "h264" as const,
           crf: 23,
           bitrateMbps: 8,
           audioKbps: 192,
         },
+      },
+      rendering: {
+        output: { url: null, thumbnailUrl: null, durationSec: null, sizeBytes: null },
       },
     };
 
