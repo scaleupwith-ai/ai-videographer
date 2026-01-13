@@ -87,17 +87,30 @@ export default function NewVideoPage() {
         }),
       });
 
-      if (!urlRes.ok) throw new Error("Failed to get upload URL");
+      if (!urlRes.ok) {
+        const errData = await urlRes.json().catch(() => ({}));
+        throw new Error(errData.error || `API error: ${urlRes.status}`);
+      }
       const { uploadUrl, objectKey } = await urlRes.json();
 
       // Upload to R2/S3
-      const uploadRes = await fetch(uploadUrl, {
-        method: "PUT",
-        body: video.file,
-        headers: { "Content-Type": video.file.type },
-      });
+      try {
+        const uploadRes = await fetch(uploadUrl, {
+          method: "PUT",
+          body: video.file,
+          headers: { "Content-Type": video.file.type },
+        });
 
-      if (!uploadRes.ok) throw new Error("Failed to upload file");
+        if (!uploadRes.ok) {
+          throw new Error(`Storage upload failed: ${uploadRes.status}`);
+        }
+      } catch (uploadError) {
+        // CORS error shows as TypeError: Failed to fetch
+        if (uploadError instanceof TypeError && uploadError.message === "Failed to fetch") {
+          throw new Error("CORS error: Configure CORS on your R2/S3 bucket to allow localhost:3000");
+        }
+        throw uploadError;
+      }
 
       // Complete upload (save to DB)
       const completeRes = await fetch("/api/assets/complete", {
@@ -112,12 +125,16 @@ export default function NewVideoPage() {
         }),
       });
 
-      if (!completeRes.ok) throw new Error("Failed to save asset");
+      if (!completeRes.ok) {
+        const errData = await completeRes.json().catch(() => ({}));
+        throw new Error(errData.error || "Failed to save asset metadata");
+      }
       const { asset } = await completeRes.json();
 
       return asset.id;
     } catch (error) {
       console.error("Upload failed:", error);
+      toast.error(error instanceof Error ? error.message : "Upload failed");
       return null;
     }
   };
