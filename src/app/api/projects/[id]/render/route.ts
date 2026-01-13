@@ -17,12 +17,22 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Check user credits
-    const { data: userCredits } = await adminSupabase
+    // Check user credits - create if not exists
+    let { data: userCredits } = await adminSupabase
       .from("user_credits")
       .select("credits")
       .eq("user_id", user.id)
       .single();
+
+    // If no credits record exists, create one with 3 free credits
+    if (!userCredits) {
+      const { data: newCredits } = await adminSupabase
+        .from("user_credits")
+        .insert({ user_id: user.id, credits: 3 })
+        .select("credits")
+        .single();
+      userCredits = newCredits;
+    }
 
     const currentCredits = userCredits?.credits ?? 0;
 
