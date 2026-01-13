@@ -198,6 +198,16 @@ CREATE POLICY "Users can view own render jobs" ON render_jobs
     )
   );
 
+-- Render Jobs: Users can create jobs for their own projects
+CREATE POLICY "Users can create render jobs for own projects" ON render_jobs
+  FOR INSERT WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM projects
+      WHERE projects.id = render_jobs.project_id
+      AND projects.owner_id = auth.uid()
+    )
+  );
+
 -- Render Jobs: Service role can do everything (for worker)
 -- Note: Service role bypasses RLS by default
 
