@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
       const { data: existingAsset } = await adminSupabase
         .from("media_assets")
         .select("id")
-        .eq("storage_key", `gdrive:${fileId}`)
+        .eq("object_key", `gdrive:${fileId}`)
         .eq("owner_id", user.id)
         .single();
 
@@ -95,6 +95,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Create new media asset entry using admin client
+      // Column names: object_key, public_url, kind (enum: video, image, audio, srt, logo)
       const { data: newAsset, error: assetError } = await adminSupabase
         .from("media_assets")
         .insert({
@@ -102,9 +103,9 @@ export async function POST(request: NextRequest) {
           filename: `clip-${clip.id}.mp4`,
           mime_type: "video/mp4",
           size_bytes: 0, // Unknown for GDrive
-          storage_key: `gdrive:${fileId}`,
-          url: getDownloadUrl(fileId),
-          asset_type: "video",
+          object_key: `gdrive:${fileId}`,
+          public_url: getDownloadUrl(fileId),
+          kind: "video",
           duration_sec: clip.duration_seconds,
         })
         .select()
@@ -177,6 +178,7 @@ export async function POST(request: NextRequest) {
         const publicUrl = `${process.env.R2_PUBLIC_BASE_URL}/${key}`;
 
         // Create media asset using admin client
+        // Column names: object_key, public_url, kind (enum: video, image, audio, srt, logo)
         const { data: voiceoverAsset, error: voiceoverError } = await adminSupabase
           .from("media_assets")
           .insert({
@@ -184,9 +186,9 @@ export async function POST(request: NextRequest) {
             filename: `voiceover-${Date.now()}.mp3`,
             mime_type: "audio/mpeg",
             size_bytes: audioBuffer.length,
-            storage_key: key,
-            url: publicUrl,
-            asset_type: "audio",
+            object_key: key,
+            public_url: publicUrl,
+            kind: "audio",
           })
           .select()
           .single();
