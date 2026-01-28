@@ -4,7 +4,7 @@
  * Used for video indexing and analysis (replacing Gemini for video processing)
  */
 
-const TWELVELABS_API_BASE = "https://api.twelvelabs.io/v1.2";
+const TWELVELABS_API_BASE = "https://api.twelvelabs.io/v1.3";
 
 interface TwelveLabsConfig {
   apiKey: string;
@@ -25,10 +25,13 @@ function getConfig(): TwelveLabsConfig {
 async function twelveLabsFetch(
   endpoint: string,
   options: RequestInit = {}
-): Promise<Response> {
+): Promise<Response & { endpoint: string }> {
   const { apiKey } = getConfig();
+  const url = `${TWELVELABS_API_BASE}${endpoint}`;
   
-  const response = await fetch(`${TWELVELABS_API_BASE}${endpoint}`, {
+  console.log(`TwelveLabs API Request: ${options.method || "GET"} ${url}`);
+  
+  const response = await fetch(url, {
     ...options,
     headers: {
       "x-api-key": apiKey,
@@ -37,22 +40,23 @@ async function twelveLabsFetch(
     },
   });
   
-  return response;
+  // Attach endpoint to response for better error messages
+  return Object.assign(response, { endpoint });
 }
 
 /**
  * Safely parse JSON from a response, handling HTML error pages
  */
-async function safeParseJson(response: Response): Promise<unknown> {
+async function safeParseJson(response: Response & { endpoint?: string }): Promise<unknown> {
   const text = await response.text();
+  const endpoint = response.endpoint || "unknown";
   
   // Check if the response is HTML (error page)
   if (text.trim().startsWith("<") || text.trim().startsWith("<!")) {
     throw new Error(
-      `TwelveLabs API returned an HTML error page. ` +
+      `TwelveLabs API returned an HTML error page for endpoint "${endpoint}". ` +
       `Status: ${response.status} ${response.statusText}. ` +
-      `This usually means the API key is invalid or missing. ` +
-      `Please check your TWELVELABS_API_KEY environment variable.`
+      `This usually means the endpoint doesn't exist or the API version is wrong.`
     );
   }
   
@@ -60,7 +64,7 @@ async function safeParseJson(response: Response): Promise<unknown> {
     return JSON.parse(text);
   } catch {
     throw new Error(
-      `Failed to parse TwelveLabs response as JSON. ` +
+      `Failed to parse TwelveLabs response as JSON for endpoint "${endpoint}". ` +
       `Status: ${response.status}. Response: ${text.substring(0, 200)}`
     );
   }
@@ -436,8 +440,13 @@ export interface VideoDetails {
 /**
  * Get video details
  */
-export async function getVideoDetails(videoId: string): Promise<VideoDetails> {
-  const response = await twelveLabsFetch(`/indexes/videos/${videoId}`);
+export async function getVideoDetails(videoId: string, indexId?: string): Promise<VideoDetails> {
+  // If we have an indexId, use the proper endpoint
+  const endpoint = indexId 
+    ? `/indexes/${indexId}/videos/${videoId}`
+    : `/videos/${videoId}`;
+  
+  const response = await twelveLabsFetch(endpoint);
   const data = await safeParseJson(response);
 
   if (!response.ok) {
@@ -465,14 +474,27 @@ export interface VideoAnalysisResult {
  * This combines summary, chapters, highlights, and metadata
  */
 export async function analyzeIndexedVideo(
-  videoId: string
+  videoId: string,
+  indexId?: string
 ): Promise<VideoAnalysisResult> {
   // Fetch all analysis types in parallel
   const [summary, chapters, highlights, details] = await Promise.all([
-    generateSummary(videoId).catch(() => ""),
-    generateChapters(videoId).catch(() => []),
-    generateHighlights(videoId).catch(() => []),
-    getVideoDetails(videoId).catch(() => null),
+    generateSummary(videoId).catch((e) => {
+      console.error("Failed to generate summary:", e);
+      return "";
+    }),
+    generateChapters(videoId).catch((e) => {
+      console.error("Failed to generate chapters:", e);
+      return [];
+    }),
+    generateHighlights(videoId).catch((e) => {
+      console.error("Failed to generate highlights:", e);
+      return [];
+    }),
+    getVideoDetails(videoId, indexId).catch((e) => {
+      console.error("Failed to get video details:", e);
+      return null;
+    }),
   ]);
 
   return {
@@ -548,7 +570,7 @@ export async function processVideoFromUrl(
   onProgress?.(75, "Indexing complete, generating analysis...");
   
   // Perform comprehensive analysis
-  const analysis = await analyzeIndexedVideo(videoId);
+  const analysis = await analyzeIndexedVideo(videoId, indexId);
   
   onProgress?.(100, "Analysis complete");
 
