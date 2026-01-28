@@ -3,11 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Film, Loader2 } from "lucide-react";
+import { Video, Loader2, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 
@@ -43,34 +42,73 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-radial p-4">
-      <div className="absolute inset-0 bg-grid-pattern opacity-20" />
-      
-      <Card className="w-full max-w-md relative z-10 bg-card/80 backdrop-blur-sm border-border/50">
-        <CardHeader className="text-center">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary to-accent flex items-center justify-center mx-auto mb-4">
-            <Film className="w-10 h-10 text-primary-foreground" />
+    <div className="min-h-screen flex">
+      {/* Left Panel - Branding */}
+      <div className="hidden lg:flex lg:w-1/2 bg-[#2A2F38] text-white flex-col justify-between p-12">
+        <div>
+          <Link href="/" className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-[#00f0ff] flex items-center justify-center">
+              <Video className="w-6 h-6 text-[#2A2F38]" />
+            </div>
+            <span className="text-xl font-bold">AI Videographer</span>
+          </Link>
+        </div>
+
+        <div>
+          <h1 className="text-4xl font-bold mb-4">Welcome back</h1>
+          <p className="text-white/60 text-lg">
+            Sign in to continue creating amazing videos with AI.
+          </p>
+        </div>
+
+        <p className="text-white/40 text-sm">
+          © {new Date().getFullYear()} AI Videographer. All rights reserved.
+        </p>
+      </div>
+
+      {/* Right Panel - Form */}
+      <div className="flex-1 flex items-center justify-center p-8 bg-white">
+        <div className="w-full max-w-md">
+          {/* Mobile Logo */}
+          <div className="lg:hidden mb-8">
+            <Link href="/" className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#00f0ff] flex items-center justify-center">
+                <Video className="w-6 h-6 text-[#2A2F38]" />
+              </div>
+              <span className="text-xl font-bold text-[#2A2F38]">AI Videographer</span>
+            </Link>
           </div>
-          <CardTitle className="text-2xl">Welcome back</CardTitle>
-          <CardDescription>
-            Sign in to your AI Videographer account
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold text-[#2A2F38]">Sign in</h2>
+            <p className="text-[#36454f] mt-1">
+              Enter your credentials to access your account
+            </p>
+          </div>
+
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
                 type="email"
-                placeholder="you@example.com"
+                placeholder="name@company.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                className="h-12"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password">Password</Label>
+                <Link
+                  href="/forgot-password"
+                  className="text-sm text-[#00f0ff] hover:underline"
+                >
+                  Forgot password?
+                </Link>
+              </div>
               <Input
                 id="password"
                 type="password"
@@ -78,23 +116,30 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                className="h-12"
               />
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <Button
+              type="submit"
+              className="w-full h-12 bg-[#00f0ff] hover:bg-[#00f0ff]/90 text-[#2A2F38] font-semibold"
+              disabled={loading}
+            >
+              {loading ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : null}
               Sign In
+              <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
           </form>
 
-          <p className="text-center text-sm text-muted-foreground mt-6">
+          <p className="text-center text-sm text-[#36454f] mt-8">
             Don&apos;t have an account?{" "}
-            <Link href="/signup" className="text-primary hover:underline">
+            <Link href="/signup" className="text-[#00f0ff] hover:underline font-medium">
               Sign up
             </Link>
           </p>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }
-

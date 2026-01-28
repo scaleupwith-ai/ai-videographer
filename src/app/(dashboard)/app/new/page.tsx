@@ -1,15 +1,28 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Send, Sparkles, Film, Loader2, ChevronRight, Mic, MicOff } from "lucide-react";
+import confetti from "canvas-confetti";
+import { 
+  Mic, MicOff, FileText, Upload, Sparkles, Loader2, 
+  ChevronRight, ChevronLeft, Check, Film, ArrowLeftRight,
+  Search, X, Play, RefreshCw, Music
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Card } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -17,27 +30,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-interface Message {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  timeline?: AITimeline | null;
-}
-
-interface AITimeline {
-  title: string;
-  voiceover?: string;
-  scenes: {
-    clipId: string;
-    description: string;
-    inSec: number;
-    outSec: number;
-  }[];
-}
+// Available transitions for user to choose
+const TRANSITIONS = [
+  { value: "none", label: "No Transition" },
+  { value: "fade", label: "Fade" },
+  { value: "fadeblack", label: "Fade to Black" },
+  { value: "fadewhite", label: "Fade to White" },
+  { value: "wipeleft", label: "Wipe Left" },
+  { value: "wiperight", label: "Wipe Right" },
+  { value: "slideup", label: "Slide Up" },
+  { value: "slidedown", label: "Slide Down" },
+  { value: "circleopen", label: "Circle Open" },
+  { value: "circleclose", label: "Circle Close" },
+  { value: "dissolve", label: "Dissolve" },
+  { value: "pixelize", label: "Pixelize" },
+  { value: "radial", label: "Radial" },
+];
 
 interface Voice {
   id: string;
@@ -47,50 +58,119 @@ interface Voice {
   is_default: boolean;
 }
 
+interface UserAsset {
+  id: string;
+  filename: string;
+  public_url: string;
+  thumbnail_url: string | null;
+  kind: string;
+  duration_sec: number | null;
+  metadata: {
+    name?: string;
+    description?: string;
+  } | null;
+}
+
+interface TimelineScene {
+  clipId: string;
+  intent: string;
+  clipDescription: string;
+  durationSec: number;
+  transitionOut: string | null;
+  transitionDuration: number;
+  isUserAsset?: boolean;
+}
+
+interface Clip {
+  id: string;
+  description: string;
+  tags: string[];
+  durationSeconds: number;
+  thumbnailUrl: string | null;
+}
+
+type Step = 
+  | "voiceover" 
+  | "script" 
+  | "assets" 
+  | "describe" 
+  | "generating" 
+  | "timeline";
+
 export default function NewVideoPage() {
   const router = useRouter();
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [currentTimeline, setCurrentTimeline] = useState<AITimeline | null>(null);
   
-  // Voiceover settings
+  // AI Mode - let AI decide everything
+  const [aiMode, setAiMode] = useState<boolean>(false);
+  
+  // Current step
+  const [step, setStep] = useState<Step>("voiceover");
+  
+  // Step 1: Voiceover
+  const [wantVoiceover, setWantVoiceover] = useState<boolean | null>(null);
   const [voices, setVoices] = useState<Voice[]>([]);
-  const [includeVoiceover, setIncludeVoiceover] = useState(true);
   const [selectedVoiceId, setSelectedVoiceId] = useState<string>("");
+  const [voiceoverVolume, setVoiceoverVolume] = useState<number>(1.0); // 0.3-1.5
   
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Step 2: Script
+  const [hasScript, setHasScript] = useState<boolean | null>(null);
+  const [script, setScript] = useState("");
+  const [isEditingScript, setIsEditingScript] = useState(false);
+  
+  // Step 3: User Assets
+  const [wantUserAssets, setWantUserAssets] = useState<boolean | null>(null);
+  const [userAssets, setUserAssets] = useState<UserAsset[]>([]);
+  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
+  
+  // Music selection
+  const [musicTracks, setMusicTracks] = useState<Array<{ id: string; title: string; artist: string | null; duration_seconds: number; audio_url: string; genre: string | null }>>([]);
+  const [selectedMusicId, setSelectedMusicId] = useState<string>("");
+  const [musicVolume, setMusicVolume] = useState<"loud" | "medium" | "low" | "faint">("medium");
+  
+  // Quality settings
+  const [videoQuality, setVideoQuality] = useState<"4k" | "1080p" | "720p">("1080p");
+  
+  // Caption settings
+  const [enableCaptions, setEnableCaptions] = useState<boolean>(false);
+  const [captionWordsPerBlock, setCaptionWordsPerBlock] = useState<number>(3);
+  const [captionFont, setCaptionFont] = useState<string>("Inter");
+  
+  // Step 4: Description
+  const [description, setDescription] = useState("");
+  
+  // Generation state
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationStatus, setGenerationStatus] = useState("");
+  
+  // Timeline state
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [timeline, setTimeline] = useState<{ title: string; scenes: TimelineScene[] } | null>(null);
+  const [voiceoverDuration, setVoiceoverDuration] = useState<number>(0);
+  
+  // Scene switching
+  const [swapSceneIndex, setSwapSceneIndex] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Clip[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  
+  // Rendering
+  const [isRendering, setIsRendering] = useState(false);
 
+  // Fetch voices and music on mount
   useEffect(() => {
-    // Fetch available voices
     fetchVoices();
-  }, []);
-
-  useEffect(() => {
-    // Auto-scroll to bottom when new messages arrive
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  useEffect(() => {
-    // Focus input on mount
-    inputRef.current?.focus();
+    fetchMusic();
   }, []);
 
   const fetchVoices = async () => {
     try {
-      const response = await fetch("/api/voices");
-      if (response.ok) {
-        const data = await response.json();
+      const res = await fetch("/api/voices");
+      if (res.ok) {
+        const data = await res.json();
         setVoices(data.voices || []);
-        
-        // Set default voice
         const defaultVoice = data.voices?.find((v: Voice) => v.is_default);
         if (defaultVoice) {
-          setSelectedVoiceId(defaultVoice.eleven_labs_id);
-        } else if (data.voices?.length > 0) {
-          setSelectedVoiceId(data.voices[0].eleven_labs_id);
+          setSelectedVoiceId(defaultVoice.id);
         }
       }
     } catch (error) {
@@ -98,393 +178,1271 @@ export default function NewVideoPage() {
     }
   };
 
-  const sendMessage = async () => {
-    if (!input.trim() || isLoading) return;
-
-    const userMessage: Message = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content: input.trim(),
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-    setInput("");
-    setIsLoading(true);
-    setCurrentTimeline(null);
-
+  const fetchMusic = async () => {
     try {
-      const response = await fetch("/api/ai/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: [...messages, userMessage].map(m => ({
-            role: m.role,
-            content: m.content,
-          })),
-          searchClips: true,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to get AI response");
-      }
-
-      const data = await response.json();
-      
-      const assistantMessage: Message = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: data.message,
-        timeline: data.timeline,
-      };
-
-      setMessages(prev => [...prev, assistantMessage]);
-
-      if (data.timeline) {
-        setCurrentTimeline(data.timeline);
-        // Don't auto-generate - let user choose voiceover settings first
+      const res = await fetch("/api/public/music");
+      if (res.ok) {
+        const data = await res.json();
+        setMusicTracks(data.tracks || []);
       }
     } catch (error) {
-      console.error("Chat error:", error);
-      toast.error("Failed to get AI response");
-    } finally {
-      setIsLoading(false);
+      console.error("Failed to fetch music:", error);
     }
   };
 
-  const generateVideo = async () => {
-    if (!currentTimeline) return;
+  const fetchUserAssets = async () => {
+    try {
+      const res = await fetch("/api/assets");
+      if (res.ok) {
+        const data = await res.json();
+        setUserAssets(data.assets || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch assets:", error);
+    }
+  };
+
+  const handleVoiceoverChoice = (want: boolean) => {
+    setWantVoiceover(want);
+    if (want) {
+      // Stay to pick voice, then next
+    } else {
+      setStep("assets");
+      fetchUserAssets();
+    }
+  };
+
+  const handleScriptChoice = (has: boolean) => {
+    setHasScript(has);
+    if (has) {
+      setIsEditingScript(true);
+    }
+  };
+
+  const handleAssetChoice = (want: boolean) => {
+    setWantUserAssets(want);
+    if (want) {
+      fetchUserAssets();
+    }
+  };
+
+  const toggleAssetSelection = (assetId: string) => {
+    setSelectedAssetIds(prev => 
+      prev.includes(assetId) 
+        ? prev.filter(id => id !== assetId)
+        : [...prev, assetId]
+    );
+  };
+
+  const goToNextStep = () => {
+    // In AI mode, go directly to generate from voiceover step
+    if (aiMode && step === "voiceover") {
+      handleGenerate();
+      return;
+    }
     
+    switch (step) {
+      case "voiceover":
+        setStep("script");
+        break;
+      case "script":
+        setStep("assets");
+        fetchUserAssets();
+        break;
+      case "assets":
+        setStep("describe");
+        break;
+      case "describe":
+        handleGenerate();
+        break;
+    }
+  };
+
+  const goToPrevStep = () => {
+    switch (step) {
+      case "script":
+        setStep("voiceover");
+        break;
+      case "assets":
+        setStep("script");
+        break;
+      case "describe":
+        setStep("assets");
+        break;
+      case "timeline":
+        setStep("describe");
+        break;
+    }
+  };
+
+  const canProceed = () => {
+    switch (step) {
+      case "voiceover":
+        // In AI mode, just need description
+        if (aiMode) return description.trim().length > 10;
+        if (wantVoiceover === null) return false;
+        if (wantVoiceover && !selectedVoiceId) return false;
+        return true;
+      case "script":
+        if (wantVoiceover) {
+          if (hasScript === null) return false;
+          if (hasScript && !script.trim()) return false;
+        }
+        return true;
+      case "assets":
+        return wantUserAssets !== null;
+      case "describe":
+        return description.trim().length > 10;
+      default:
+        return false;
+    }
+  };
+
+  const handleGenerate = async () => {
+    setStep("generating");
     setIsGenerating(true);
-    toast.info("Creating your video...");
 
     try {
-      const response = await fetch("/api/ai/generate-timeline", {
+      // Step 1: Generate or use existing script
+      let finalScript = script;
+      let voiceDuration = 0;
+      let voiceoverAssetId: string | null = null;
+      let timedCaptions: string | undefined;
+      let captionSegments: Array<{ start: number; end: number; text: string }> | undefined;
+
+      if (wantVoiceover || aiMode) {
+        // Ensure we have a voice selected
+        let voiceToUse = selectedVoiceId;
+        if (!voiceToUse && voices.length > 0) {
+          voiceToUse = voices.find(v => v.is_default)?.id || voices[0].id;
+        }
+        if (!voiceToUse) {
+          throw new Error("No voice available. Please add a voice in the admin panel.");
+        }
+        
+        if (!hasScript || !script.trim()) {
+          // Generate script first
+          setGenerationStatus("Generating script...");
+          
+          const scriptRes = await fetch("/api/ai/generate-script", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              description,
+              selectedAssets: selectedAssetIds.length > 0 ? userAssets.filter(a => selectedAssetIds.includes(a.id)) : undefined,
+            }),
+          });
+
+          if (!scriptRes.ok) throw new Error("Failed to generate script");
+          
+          const scriptData = await scriptRes.json();
+          finalScript = scriptData.script;
+          setScript(finalScript);
+        }
+
+        // Step 2: Generate voiceover with timed captions from Deepgram
+        setGenerationStatus("Generating voiceover audio...");
+        
+        const voiceoverRes = await fetch("/api/ai/generate-voiceover", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            script: finalScript,
+            voiceId: voiceToUse,
+          }),
+        });
+
+        if (!voiceoverRes.ok) throw new Error("Failed to generate voiceover");
+        
+        const voiceoverData = await voiceoverRes.json();
+        voiceDuration = voiceoverData.durationSec;
+        voiceoverAssetId = voiceoverData.assetId;
+        timedCaptions = voiceoverData.formattedCaptions; // Timed captions from Deepgram (for AI context)
+        captionSegments = voiceoverData.captions; // Actual caption segments with timing (for burning in)
+        setVoiceoverDuration(voiceDuration);
+      } else {
+        // No voiceover - estimate duration from description
+        voiceDuration = 30; // Default 30 seconds
+      }
+
+      // Step 3: Build timeline (with timed captions if available)
+      setGenerationStatus("Building video timeline...");
+      
+      // Map volume label to actual value
+      const volumeMap = { faint: 0.1, low: 0.2, medium: 0.3, loud: 0.5 };
+      
+      // Map quality to resolution
+      const qualityMap = {
+        "4k": { width: 3840, height: 2160 },
+        "1080p": { width: 1920, height: 1080 },
+        "720p": { width: 1280, height: 720 },
+      };
+      
+      const timelineRes = await fetch("/api/ai/build-timeline", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          timeline: currentTimeline,
-          projectTitle: currentTimeline.title,
-          includeVoiceover,
-          voiceId: includeVoiceover ? selectedVoiceId : undefined,
+          title: description.slice(0, 50),
+          script: finalScript || description,
+          description: description,
+          voiceoverAssetId,
+          voiceoverDurationSec: voiceDuration,
+          voiceoverVolume: wantVoiceover ? voiceoverVolume : undefined,
+          selectedAssets: selectedAssetIds.length > 0 ? selectedAssetIds : undefined,
+          timedCaptions, // Pass timed captions to AI for precise timing
+          captionSegments: enableCaptions ? captionSegments : undefined, // Pass caption segments for burning in
+          selectedMusicId: aiMode ? undefined : (selectedMusicId || undefined), // Let AI choose in AI mode
+          musicVolume: aiMode ? undefined : (selectedMusicId ? volumeMap[musicVolume] : undefined),
+          aiMode, // Tell API this is AI mode
+          resolution: qualityMap[videoQuality], // Pass resolution
+          // Caption settings
+          captionSettings: enableCaptions ? {
+            enabled: true,
+            wordsPerBlock: captionWordsPerBlock,
+            font: captionFont,
+          } : { enabled: false },
         }),
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to generate timeline");
+      if (!timelineRes.ok) {
+        const errorData = await timelineRes.json().catch(() => ({}));
+        console.error("Timeline API error:", errorData);
+        throw new Error(errorData.error || "Failed to build timeline");
       }
+      
+      const timelineData = await timelineRes.json();
+      const newProjectId = timelineData.projectId;
+      
+      // Redirect to editor for review/editing before render
+      // User will click "Render" when ready
+      toast.success("Timeline generated! Opening editor...");
+      router.push(`/app/projects/${newProjectId}/edit`);
+    } catch (error) {
+      console.error("Generation error:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to generate video");
+      setStep("describe");
+    } finally {
+      setIsGenerating(false);
+      setGenerationStatus("");
+    }
+  };
 
-      const { projectId } = await response.json();
+  const handleSearchClips = async (minDuration: number) => {
+    setIsSearching(true);
+    try {
+      const params = new URLSearchParams();
+      if (searchQuery) params.set("q", searchQuery);
+      params.set("minDuration", minDuration.toString());
 
-      // Start the render
-      const renderResponse = await fetch(`/api/projects/${projectId}/render`, {
+      const res = await fetch(`/api/clips/search?${params}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSearchResults(data.clips || []);
+      }
+    } catch (error) {
+      console.error("Search error:", error);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleSwapClip = (newClipId: string, newDescription: string) => {
+    if (swapSceneIndex === null || !timeline) return;
+
+    const newScenes = [...timeline.scenes];
+    newScenes[swapSceneIndex] = {
+      ...newScenes[swapSceneIndex],
+      clipId: newClipId,
+      clipDescription: newDescription,
+    };
+
+    setTimeline({ ...timeline, scenes: newScenes });
+    setSwapSceneIndex(null);
+    setSearchQuery("");
+    setSearchResults([]);
+  };
+
+  const handleTransitionChange = (sceneIndex: number, transition: string) => {
+    if (!timeline) return;
+
+    const newScenes = [...timeline.scenes];
+    newScenes[sceneIndex] = {
+      ...newScenes[sceneIndex],
+      transitionOut: transition === "none" ? null : transition,
+    };
+
+    setTimeline({ ...timeline, scenes: newScenes });
+  };
+
+  const handleRender = async () => {
+    if (!projectId) return;
+
+    setIsRendering(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/render`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ timeline }),
       });
 
-      if (!renderResponse.ok) {
-        const renderError = await renderResponse.json();
-        if (renderResponse.status === 402) {
-          toast.error("Insufficient credits. Add credits in Billing.");
-          router.push("/app/billing");
-          return;
-        }
-        toast.warning("Project created but render failed to start");
-      } else {
-        toast.success("Video rendering started!");
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed to start render");
       }
 
       router.push(`/app/projects/${projectId}`);
     } catch (error) {
-      console.error("Generate error:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to generate video");
+      console.error("Render error:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to start render");
     } finally {
-      setIsGenerating(false);
+      setIsRendering(false);
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  };
+  // Render step content
+  const renderStepContent = () => {
+    switch (step) {
+      case "voiceover":
+        return (
+          <div className="max-w-2xl mx-auto space-y-8">
+            <div className="text-center">
+              <h1 className="text-3xl font-bold mb-2">Create Your Video</h1>
+              <p className="text-muted-foreground">Let&apos;s start by setting up your video options</p>
+            </div>
 
-  const formatMessage = (content: string) => {
-    // Remove the timeline JSON block from display
-    return content.replace(/```timeline\n[\s\S]*?\n```/g, "").trim();
-  };
-
-  const totalDuration = currentTimeline?.scenes.reduce((sum, s) => sum + (s.outSec - s.inSec), 0) || 0;
-
-  return (
-    <div className="flex-1 flex flex-col h-full min-h-0 bg-gradient-to-b from-background to-muted/20">
-      {/* Header */}
-      <div className="shrink-0 border-b bg-background/80 backdrop-blur-sm px-6 py-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-            <Sparkles className="w-5 h-5 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-xl font-semibold">Create with AI</h1>
-            <p className="text-sm text-muted-foreground">
-              Describe your video and I&apos;ll curate the perfect clips
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Chat Area */}
-      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        {/* Messages */}
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-          <ScrollArea className="flex-1 h-full p-6">
-            {messages.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center px-4">
-                <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mb-6">
-                  <Film className="w-10 h-10 text-primary" />
-                </div>
-                <h2 className="text-2xl font-semibold mb-2">What video do you want to create?</h2>
-                <p className="text-muted-foreground max-w-md mb-8">
-                  Tell me about your vision and I&apos;ll search our b-roll library to curate the perfect clips for your video.
-                </p>
-                <div className="grid gap-2 w-full max-w-md">
-                  {[
-                    "30-second tech product showcase with modern visuals",
-                    "Inspiring 45-second motivational video about success",
-                    "Quick 20-second social media ad for a startup",
-                  ].map((suggestion) => (
-                    <button
-                      key={suggestion}
-                      onClick={() => setInput(suggestion)}
-                      className="text-left px-4 py-3 rounded-lg border bg-card hover:bg-accent transition-colors text-sm"
-                    >
-                      {suggestion}
-                    </button>
-                  ))}
-                </div>
+            {/* AI Mode Banner */}
+            <button
+              onClick={() => {
+                setAiMode(!aiMode);
+                if (!aiMode) {
+                  // When enabling AI mode, set defaults
+                  setWantVoiceover(true);
+                  setHasScript(false);
+                  setWantUserAssets(false);
+                  // Use default voice, or first voice if no default
+                  const defaultVoice = voices.find(v => v.is_default) || voices[0];
+                  if (defaultVoice) setSelectedVoiceId(defaultVoice.id);
+                }
+              }}
+              className={cn(
+                "w-full p-4 rounded-xl border-2 transition-all flex items-center gap-4",
+                aiMode 
+                  ? "border-primary bg-primary/10 shadow-lg shadow-primary/20" 
+                  : "border-dashed border-muted-foreground/30 hover:border-primary/50"
+              )}
+            >
+              <div className={cn(
+                "w-12 h-12 rounded-full flex items-center justify-center shrink-0",
+                aiMode ? "bg-primary text-primary-foreground" : "bg-muted"
+              )}>
+                <Sparkles className="w-6 h-6" />
               </div>
-            ) : (
-              <div className="space-y-6 max-w-3xl mx-auto">
-                {messages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={cn(
-                      "flex gap-3",
-                      message.role === "user" ? "justify-end" : "justify-start"
-                    )}
+              <div className="text-left flex-1">
+                <p className="font-semibold text-lg">Let AI Do Everything</p>
+                <p className="text-sm text-muted-foreground">
+                  AI decides voiceover, music, sound effects, timeline, and more
+                </p>
+              </div>
+              <ChevronRight className={cn(
+                "w-5 h-5 transition-transform",
+                aiMode && "rotate-90"
+              )} />
+            </button>
+
+            {aiMode && (
+              <Card className="border-primary/50">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-primary" />
+                    Describe Your Video
+                  </CardTitle>
+                  <CardDescription>
+                    Tell the AI what you want. It will handle everything else!
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="E.g., Create a 30-second promotional video for our new running shoes. Show the product in action with athletic scenes. Make it energetic and modern with upbeat music."
+                    rows={6}
+                    className="resize-none"
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    Be specific about style, mood, music preference, and what you want to show
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Voiceover choice */}
+            {!aiMode && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Mic className="w-5 h-5 text-primary" />
+                  Do you want a voiceover?
+                </CardTitle>
+                <CardDescription>
+                  AI will generate natural-sounding narration for your video
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <Button
+                    variant={wantVoiceover === true ? "default" : "outline"}
+                    size="lg"
+                    className="h-24 flex-col gap-2"
+                    onClick={() => handleVoiceoverChoice(true)}
                   >
-                    {message.role === "assistant" && (
-                      <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                        <Sparkles className="w-4 h-4 text-primary" />
-                      </div>
-                    )}
-                    <div
-                      className={cn(
-                        "rounded-2xl px-4 py-3 max-w-[80%]",
-                        message.role === "user"
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-card border"
-                      )}
-                    >
-                      <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                        {formatMessage(message.content)}
-                      </p>
-                      {message.timeline && (
-                        <Card className="mt-4 p-4 bg-accent/50">
-                          <div className="flex items-center gap-2 mb-3">
-                            <Film className="w-4 h-4 text-primary" />
-                            <span className="font-medium">{message.timeline.title}</span>
-                            <Badge variant="secondary" className="ml-auto">
-                              {message.timeline.scenes.length} clips
-                            </Badge>
-                          </div>
-                          {message.timeline.voiceover && (
-                            <div className="mb-3 p-3 rounded-lg bg-background/50 border">
-                              <p className="text-xs font-medium text-muted-foreground mb-1">🎙️ Voiceover Script</p>
-                              <p className="text-sm italic">&ldquo;{message.timeline.voiceover}&rdquo;</p>
-                            </div>
+                    <Mic className="w-8 h-8" />
+                    <span>Yes, add voiceover</span>
+                  </Button>
+                  <Button
+                    variant={wantVoiceover === false ? "default" : "outline"}
+                    size="lg"
+                    className="h-24 flex-col gap-2"
+                    onClick={() => handleVoiceoverChoice(false)}
+                  >
+                    <MicOff className="w-8 h-8" />
+                    <span>No, video only</span>
+                  </Button>
+                </div>
+
+                {/* Voice selection */}
+                {wantVoiceover && (
+                  <div className="pt-4 border-t">
+                    <Label className="mb-3 block">Choose a voice</Label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {voices.map((voice) => (
+                        <button
+                          key={voice.id}
+                          onClick={() => setSelectedVoiceId(voice.id)}
+                          className={cn(
+                            "p-3 rounded-lg border text-left transition-all",
+                            selectedVoiceId === voice.id
+                              ? "border-primary bg-primary/10"
+                              : "border-border hover:border-primary/50"
                           )}
-                          <div className="space-y-2">
-                            {message.timeline.scenes.slice(0, 3).map((scene, i) => (
-                              <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground">
-                                <ChevronRight className="w-3 h-3" />
-                                <span>{scene.description.slice(0, 50)}...</span>
-                                <span className="ml-auto">{scene.outSec - scene.inSec}s</span>
-                              </div>
-                            ))}
-                            {message.timeline.scenes.length > 3 && (
-                              <p className="text-xs text-muted-foreground pl-5">
-                                +{message.timeline.scenes.length - 3} more clips
-                              </p>
-                            )}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Avatar className="w-8 h-8">
+                              {voice.profile_image_url ? (
+                                <AvatarImage src={voice.profile_image_url} />
+                              ) : null}
+                              <AvatarFallback>{voice.name[0]}</AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <p className="font-medium text-sm">{voice.name}</p>
+                              {voice.is_default && (
+                                <Badge variant="secondary" className="text-xs">Default</Badge>
+                              )}
+                            </div>
                           </div>
-                        </Card>
-                      )}
+                        </button>
+                      ))}
                     </div>
-                    {message.role === "user" && (
-                      <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
-                        <span className="text-xs font-medium text-primary-foreground">You</span>
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {isLoading && (
-                  <div className="flex gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                      <Sparkles className="w-4 h-4 text-primary" />
-                    </div>
-                    <div className="rounded-2xl px-4 py-3 bg-card border">
-                      <div className="flex items-center gap-2">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span className="text-sm text-muted-foreground">
-                          Finding the perfect clips...
-                        </span>
+                    {/* Voiceover Volume Selector */}
+                    <div className="pt-4 border-t">
+                      <Label className="mb-3 block">Voiceover Volume</Label>
+                      <div className="grid grid-cols-5 gap-2">
+                        {[
+                          { label: "Faint", value: 0.3 },
+                          { label: "Quiet", value: 0.6 },
+                          { label: "Normal", value: 1.0 },
+                          { label: "Loud", value: 1.2 },
+                          { label: "Very Loud", value: 1.5 },
+                        ].map((opt) => (
+                          <button
+                            key={opt.value}
+                            onClick={() => setVoiceoverVolume(opt.value)}
+                            className={cn(
+                              "p-2 rounded-lg border text-xs font-medium transition-all",
+                              voiceoverVolume === opt.value
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "border-border hover:border-primary/50"
+                            )}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
                       </div>
                     </div>
                   </div>
                 )}
-                <div ref={messagesEndRef} />
-              </div>
+              </CardContent>
+            </Card>
             )}
-          </ScrollArea>
+          </div>
+        );
 
-          {/* Input Area */}
-          <div className="shrink-0 border-t bg-background p-4">
-            <div className="max-w-3xl mx-auto">
-              {isGenerating ? (
-                <div className="p-6 rounded-xl bg-primary/5 border border-primary/20 text-center">
-                  <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3 text-primary" />
-                  <p className="font-medium">Creating your video...</p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {includeVoiceover ? "Generating voiceover and preparing render" : "Preparing render"}
+      case "script":
+        return (
+          <div className="max-w-2xl mx-auto space-y-8">
+            <div className="text-center">
+              <h1 className="text-3xl font-bold mb-2">Script</h1>
+              <p className="text-muted-foreground">
+                {wantVoiceover 
+                  ? "Provide a script or let AI generate one for you"
+                  : "Skip this step if you don't need a voiceover"
+                }
+              </p>
+            </div>
+
+            {wantVoiceover ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-primary" />
+                    Do you have a script?
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {hasScript === null ? (
+                    <div className="grid grid-cols-2 gap-4">
+                      <Button
+                        variant="outline"
+                        size="lg"
+                        className="h-24 flex-col gap-2"
+                        onClick={() => handleScriptChoice(true)}
+                      >
+                        <FileText className="w-8 h-8" />
+                        <span>Yes, I have a script</span>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="lg"
+                        className="h-24 flex-col gap-2"
+                        onClick={() => handleScriptChoice(false)}
+                      >
+                        <Sparkles className="w-8 h-8" />
+                        <span>No, generate for me</span>
+                      </Button>
+                    </div>
+                  ) : hasScript ? (
+                    <div className="space-y-3">
+                      <Label>Paste your script</Label>
+                      <Textarea
+                        value={script}
+                        onChange={(e) => setScript(e.target.value)}
+                        placeholder="Enter your voiceover script here..."
+                        rows={8}
+                        className="resize-none"
+                      />
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm text-muted-foreground">
+                          {script.split(/\s+/).filter(Boolean).length} words
+                          {" • "}
+                          ~{Math.ceil(script.split(/\s+/).filter(Boolean).length / 2.5)}s estimated duration
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Natural pauses will be added automatically
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => { setHasScript(null); setScript(""); }}
+                      >
+                        <ChevronLeft className="w-4 h-4 mr-1" />
+                        Change choice
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="text-center py-4">
+                      <Sparkles className="w-12 h-12 mx-auto mb-3 text-primary" />
+                      <p className="text-sm text-muted-foreground mb-3">
+                        AI will generate a script based on your video description
+                      </p>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setHasScript(null)}
+                      >
+                        <ChevronLeft className="w-4 h-4 mr-1" />
+                        Change choice
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="text-center py-8">
+                <MicOff className="w-12 h-12 mx-auto mb-3 text-muted-foreground" />
+                <p className="text-muted-foreground">
+                  No voiceover selected. You can continue to the next step.
+                </p>
+              </Card>
+            )}
+          </div>
+        );
+
+      case "assets":
+        return (
+          <div className="max-w-3xl mx-auto space-y-8">
+            <div className="text-center">
+              <h1 className="text-3xl font-bold mb-2">Your Assets</h1>
+              <p className="text-muted-foreground">
+                Include your own product videos or images in the video
+              </p>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Upload className="w-5 h-5 text-primary" />
+                  Include your own clips?
+                </CardTitle>
+                <CardDescription>
+                  Select videos or images that MUST appear in your video
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {wantUserAssets === null ? (
+                  <div className="grid grid-cols-2 gap-4">
+                    <Button
+                      variant="outline"
+                      size="lg"
+                      className="h-24 flex-col gap-2"
+                      onClick={() => handleAssetChoice(true)}
+                    >
+                      <Upload className="w-8 h-8" />
+                      <span>Yes, use my assets</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="lg"
+                      className="h-24 flex-col gap-2"
+                      onClick={() => handleAssetChoice(false)}
+                    >
+                      <Film className="w-8 h-8" />
+                      <span>No, use b-roll only</span>
+                    </Button>
+                  </div>
+                ) : wantUserAssets ? (
+                  <div className="space-y-4">
+                    {userAssets.length === 0 ? (
+                      <div className="text-center py-8">
+                        <Upload className="w-12 h-12 mx-auto mb-3 text-muted-foreground" />
+                        <p className="text-muted-foreground mb-3">
+                          You haven&apos;t uploaded any assets yet
+                        </p>
+                        <Button onClick={() => router.push("/app/assets")}>
+                          Go to Assets
+                        </Button>
+                      </div>
+                    ) : (
+                      <>
+                        <Label>Select assets to include ({selectedAssetIds.length} selected)</Label>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-64 overflow-y-auto p-1">
+                          {userAssets.map((asset) => {
+                            const isSelected = selectedAssetIds.includes(asset.id);
+                            const meta = asset.metadata || {};
+                            
+                            return (
+                              <button
+                                key={asset.id}
+                                onClick={() => toggleAssetSelection(asset.id)}
+                                className={cn(
+                                  "relative aspect-video rounded-lg border overflow-hidden transition-all",
+                                  isSelected
+                                    ? "border-primary ring-2 ring-primary"
+                                    : "border-border hover:border-primary/50"
+                                )}
+                              >
+                                {asset.thumbnail_url || asset.public_url ? (
+                                  <img
+                                    src={asset.thumbnail_url || asset.public_url}
+                                    alt=""
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full bg-muted flex items-center justify-center">
+                                    <Film className="w-8 h-8 text-muted-foreground" />
+                                  </div>
+                                )}
+                                {isSelected && (
+                                  <div className="absolute top-2 right-2 w-6 h-6 bg-primary rounded-full flex items-center justify-center">
+                                    <Check className="w-4 h-4 text-primary-foreground" />
+                                  </div>
+                                )}
+                                <div className="absolute bottom-0 left-0 right-0 bg-black/60 p-1">
+                                  <p className="text-xs text-white truncate">
+                                    {meta.name || asset.filename}
+                                  </p>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => { setWantUserAssets(null); setSelectedAssetIds([]); }}
+                    >
+                      <ChevronLeft className="w-4 h-4 mr-1" />
+                      Change choice
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="text-center py-4">
+                    <Film className="w-12 h-12 mx-auto mb-3 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground mb-3">
+                      AI will use b-roll clips to create your video
+                    </p>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setWantUserAssets(null)}
+                    >
+                      <ChevronLeft className="w-4 h-4 mr-1" />
+                      Change choice
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Music Selection */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Music className="w-5 h-5 text-primary" />
+                  Background Music
+                </CardTitle>
+                <CardDescription>
+                  Optional: Choose background music for your video
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {musicTracks.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No music tracks available
                   </p>
-                </div>
-              ) : currentTimeline ? (
-                <div className="space-y-4">
-                  {/* Voiceover Settings */}
-                  <Card className="p-4">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        {includeVoiceover ? (
-                          <Mic className="w-5 h-5 text-primary" />
-                        ) : (
-                          <MicOff className="w-5 h-5 text-muted-foreground" />
-                        )}
-                        <div>
-                          <Label htmlFor="voiceover-toggle" className="font-medium">
-                            Include Voiceover
-                          </Label>
-                          <p className="text-xs text-muted-foreground">
-                            AI-generated voice narration for your video
-                          </p>
+                ) : (
+                  <div className="space-y-4">
+                    <div 
+                      className={cn(
+                        "p-3 rounded-lg border cursor-pointer transition-all",
+                        !selectedMusicId ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+                      )}
+                      onClick={() => setSelectedMusicId("")}
+                    >
+                      <p className="font-medium">No background music</p>
+                      <p className="text-sm text-muted-foreground">AI can still add sound effects</p>
+                    </div>
+                    <div className="max-h-48 overflow-y-auto space-y-2">
+                      {musicTracks.map((track) => (
+                        <div 
+                          key={track.id}
+                          className={cn(
+                            "p-3 rounded-lg border cursor-pointer transition-all flex items-center gap-3",
+                            selectedMusicId === track.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+                          )}
+                          onClick={() => setSelectedMusicId(track.id)}
+                        >
+                          <div className="w-10 h-10 rounded bg-purple-500/20 flex items-center justify-center shrink-0">
+                            <Music className="w-5 h-5 text-purple-500" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium truncate">{track.title}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {track.artist || "Unknown"} • {Math.round(track.duration_seconds)}s
+                              {track.genre && ` • ${track.genre}`}
+                            </p>
+                          </div>
+                          {selectedMusicId === track.id && (
+                            <Check className="w-5 h-5 text-primary shrink-0" />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    
+                    {/* Volume selector - only show when music is selected */}
+                    {selectedMusicId && (
+                      <div className="pt-3 border-t">
+                        <Label className="text-sm mb-2 block">Music Volume</Label>
+                        <div className="grid grid-cols-4 gap-2">
+                          {[
+                            { value: "faint" as const, label: "Faint", vol: 0.1 },
+                            { value: "low" as const, label: "Low", vol: 0.2 },
+                            { value: "medium" as const, label: "Medium", vol: 0.3 },
+                            { value: "loud" as const, label: "Loud", vol: 0.5 },
+                          ].map((opt) => (
+                            <button
+                              key={opt.value}
+                              onClick={() => setMusicVolume(opt.value)}
+                              className={cn(
+                                "p-2 rounded-lg border text-sm font-medium transition-all",
+                                musicVolume === opt.value
+                                  ? "border-primary bg-primary/10 text-primary"
+                                  : "border-border hover:border-primary/50"
+                              )}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
                         </div>
                       </div>
-                      <Switch
-                        id="voiceover-toggle"
-                        checked={includeVoiceover}
-                        onCheckedChange={setIncludeVoiceover}
-                      />
-                    </div>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        );
 
-                    {includeVoiceover && (
-                      <div className="space-y-3">
-                        <Label className="text-sm text-muted-foreground">Choose Voice</Label>
-                        {voices.length === 0 ? (
-                          <p className="text-sm text-muted-foreground italic">
-                            No voices configured. Add voices in the admin panel.
-                          </p>
-                        ) : (
-                          <Select value={selectedVoiceId} onValueChange={setSelectedVoiceId}>
-                            <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Select a voice" />
+      case "describe":
+        return (
+          <div className="max-w-2xl mx-auto space-y-8">
+            <div className="text-center">
+              <h1 className="text-3xl font-bold mb-2">Describe Your Video</h1>
+              <p className="text-muted-foreground">
+                Tell the AI what kind of video you want to create
+              </p>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-primary" />
+                  Video Description
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="E.g., Create a 30-second promotional video for our new running shoes. Show the product in action with athletic scenes. Make it energetic and modern."
+                  rows={6}
+                  className="resize-none"
+                />
+                <p className="text-sm text-muted-foreground">
+                  Be specific about style, mood, and what you want to show
+                </p>
+
+                {/* Quality Selection */}
+                <div className="pt-4 border-t space-y-3">
+                  <Label className="text-sm font-medium">Output Quality</Label>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setVideoQuality("4k")}
+                      className={cn(
+                        "flex-1 py-3 px-4 rounded-lg border-2 transition-all",
+                        videoQuality === "4k"
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-muted hover:border-primary/50"
+                      )}
+                    >
+                      <div className="font-semibold">4K</div>
+                      <div className="text-xs text-muted-foreground">3840×2160</div>
+                    </button>
+                    <button
+                      onClick={() => setVideoQuality("1080p")}
+                      className={cn(
+                        "flex-1 py-3 px-4 rounded-lg border-2 transition-all",
+                        videoQuality === "1080p"
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-muted hover:border-primary/50"
+                      )}
+                    >
+                      <div className="font-semibold">1080p</div>
+                      <div className="text-xs text-muted-foreground">1920×1080</div>
+                    </button>
+                    <button
+                      onClick={() => setVideoQuality("720p")}
+                      className={cn(
+                        "flex-1 py-3 px-4 rounded-lg border-2 transition-all",
+                        videoQuality === "720p"
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-muted hover:border-primary/50"
+                      )}
+                    >
+                      <div className="font-semibold">720p</div>
+                      <div className="text-xs text-muted-foreground">1280×720</div>
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {videoQuality === "4k" 
+                      ? "Best quality. Larger file size, slower rendering." 
+                      : videoQuality === "1080p" 
+                      ? "Recommended. Great quality with fast rendering." 
+                      : "Faster rendering. Good for previews and social media."}
+                  </p>
+                </div>
+
+                {/* Caption Settings */}
+                {wantVoiceover && (
+                  <div className="pt-4 border-t space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label className="text-sm font-medium">Burn-in Captions</Label>
+                        <p className="text-xs text-muted-foreground">Add text captions directly on the video</p>
+                      </div>
+                      <button
+                        onClick={() => setEnableCaptions(!enableCaptions)}
+                        className={cn(
+                          "w-12 h-6 rounded-full transition-colors relative",
+                          enableCaptions ? "bg-primary" : "bg-muted"
+                        )}
+                      >
+                        <div className={cn(
+                          "w-5 h-5 bg-white rounded-full absolute top-0.5 transition-all shadow-sm",
+                          enableCaptions ? "left-[26px]" : "left-0.5"
+                        )} />
+                      </button>
+                    </div>
+                    
+                    {enableCaptions && (
+                      <div className="grid grid-cols-2 gap-4 p-4 bg-muted/50 rounded-lg">
+                        <div className="space-y-2">
+                          <Label className="text-xs">Words Per Block</Label>
+                          <Select
+                            value={String(captionWordsPerBlock)}
+                            onValueChange={(v) => setCaptionWordsPerBlock(parseInt(v))}
+                          >
+                            <SelectTrigger className="h-9">
+                              <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              {voices.map((voice) => (
-                                <SelectItem key={voice.id} value={voice.eleven_labs_id}>
-                                  <div className="flex items-center gap-2">
-                                    <Avatar className="w-6 h-6">
-                                      <AvatarImage src={voice.profile_image_url || undefined} />
-                                      <AvatarFallback className="text-[10px]">
-                                        {voice.name.slice(0, 2).toUpperCase()}
-                                      </AvatarFallback>
-                                    </Avatar>
-                                    <span>{voice.name}</span>
-                                    {voice.is_default && (
-                                      <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                                        Default
-                                      </Badge>
-                                    )}
-                                  </div>
+                              <SelectItem value="1">1 word</SelectItem>
+                              <SelectItem value="2">2 words</SelectItem>
+                              <SelectItem value="3">3 words</SelectItem>
+                              <SelectItem value="4">4 words</SelectItem>
+                              <SelectItem value="5">5 words</SelectItem>
+                              <SelectItem value="6">6 words</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-xs">Caption Font</Label>
+                          <Select
+                            value={captionFont}
+                            onValueChange={setCaptionFont}
+                          >
+                            <SelectTrigger className="h-9">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Inter">Inter</SelectItem>
+                              <SelectItem value="Space Grotesk">Space Grotesk</SelectItem>
+                              <SelectItem value="Roboto">Roboto</SelectItem>
+                              <SelectItem value="Montserrat">Montserrat</SelectItem>
+                              <SelectItem value="Poppins">Poppins</SelectItem>
+                              <SelectItem value="Oswald">Oswald</SelectItem>
+                              <SelectItem value="Bebas Neue">Bebas Neue</SelectItem>
+                              <SelectItem value="Impact">Impact</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Summary of choices */}
+                <div className="pt-4 border-t space-y-2">
+                  <h4 className="font-medium text-sm">Summary</h4>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="secondary">
+                      {wantVoiceover ? `Voiceover: ${voices.find(v => v.id === selectedVoiceId)?.name || "Selected"}` : "No voiceover"}
+                    </Badge>
+                    <Badge variant="secondary">
+                      {hasScript ? "Custom script" : wantVoiceover ? "AI script" : "No script"}
+                    </Badge>
+                    <Badge variant="secondary">
+                      {selectedAssetIds.length > 0 
+                        ? `${selectedAssetIds.length} assets selected`
+                        : "B-roll only"}
+                    </Badge>
+                    <Badge variant="secondary">
+                      Quality: {videoQuality.toUpperCase()}
+                    </Badge>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        );
+
+      case "generating":
+        return (
+          <div className="text-center">
+            <div className="relative w-32 h-32 mx-auto mb-8">
+              <div className="absolute inset-0 rounded-full border-4 border-primary/20" />
+              <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-primary animate-spin" />
+              <div className="absolute inset-4 rounded-full border-4 border-transparent border-t-accent animate-spin" style={{ animationDirection: "reverse", animationDuration: "1.5s" }} />
+              <div className="absolute inset-8 rounded-full border-4 border-transparent border-t-primary animate-spin" style={{ animationDuration: "2s" }} />
+              <Film className="absolute inset-0 m-auto w-10 h-10 text-primary" />
+            </div>
+            <h2 className="text-3xl font-bold mb-3 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+              Creating Your Video
+            </h2>
+            <p className="text-lg text-muted-foreground max-w-md mx-auto">
+              {generationStatus || "Please wait while we work our magic..."}
+            </p>
+            <div className="mt-6 flex justify-center gap-1">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <div
+                  key={i}
+                  className="w-2 h-2 rounded-full bg-primary animate-bounce"
+                  style={{ animationDelay: `${i * 0.1}s` }}
+                />
+              ))}
+            </div>
+          </div>
+        );
+
+      case "timeline":
+        return (
+          <div className="max-w-4xl mx-auto space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold">{timeline?.title || "Your Video"}</h1>
+                <p className="text-muted-foreground">
+                  Review and customize your video timeline
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setStep("describe")}>
+                  <ChevronLeft className="w-4 h-4 mr-1" />
+                  Back
+                </Button>
+                <Button onClick={handleRender} disabled={isRendering}>
+                  {isRendering ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Rendering...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4 mr-2" />
+                      Render Video
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            {/* Timeline scenes */}
+            <div className="space-y-4">
+              {(!timeline?.scenes || timeline.scenes.length === 0) && (
+                <Card className="p-8 text-center">
+                  <Film className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                  <h3 className="text-lg font-medium mb-2">No scenes generated</h3>
+                  <p className="text-muted-foreground mb-4">
+                    The AI couldn&apos;t find suitable clips for your video. 
+                    Make sure you have clips in your library.
+                  </p>
+                  <Button variant="outline" onClick={() => setStep("describe")}>
+                    Try Again
+                  </Button>
+                </Card>
+              )}
+              {timeline?.scenes?.map((scene, index) => (
+                <Card key={index} className="overflow-hidden">
+                  <div className="flex">
+                    {/* Scene thumbnail */}
+                    <div className="w-48 aspect-video bg-muted shrink-0 flex items-center justify-center">
+                      <Film className="w-8 h-8 text-muted-foreground" />
+                    </div>
+
+                    {/* Scene info */}
+                    <CardContent className="flex-1 p-4">
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <Badge variant="outline" className="mb-1">
+                            Scene {index + 1} • {scene.durationSec}s
+                          </Badge>
+                          <p className="font-medium">{scene.intent}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {scene.clipDescription}
+                          </p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setSwapSceneIndex(index);
+                            handleSearchClips(scene.durationSec);
+                          }}
+                        >
+                          <ArrowLeftRight className="w-4 h-4 mr-1" />
+                          Switch
+                        </Button>
+                      </div>
+
+                      {/* Transition selector */}
+                      {index < (timeline?.scenes?.length || 0) - 1 && (
+                        <div className="flex items-center gap-2 mt-3 pt-3 border-t">
+                          <Label className="text-xs">Transition:</Label>
+                          <Select
+                            value={scene.transitionOut || "none"}
+                            onValueChange={(v) => handleTransitionChange(index, v)}
+                          >
+                            <SelectTrigger className="w-32 h-7 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {TRANSITIONS.map((t) => (
+                                <SelectItem key={t.value} value={t.value}>
+                                  {t.label}
                                 </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
-                        )}
-
-                        {currentTimeline.voiceover && (
-                          <div className="p-3 rounded-lg bg-muted/50 text-sm">
-                            <p className="text-xs font-medium text-muted-foreground mb-1">Script preview:</p>
-                            <p className="italic text-muted-foreground line-clamp-2">
-                              &ldquo;{currentTimeline.voiceover}&rdquo;
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </Card>
-
-                  {/* Generate Button */}
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm text-muted-foreground">
-                      <span className="font-medium">{currentTimeline.scenes.length}</span> clips •{" "}
-                      <span className="font-medium">{Math.round(totalDuration)}</span>s total
-                    </div>
-                    <Button
-                      onClick={generateVideo}
-                      size="lg"
-                      disabled={includeVoiceover && (!selectedVoiceId || voices.length === 0)}
-                    >
-                      <Film className="w-4 h-4 mr-2" />
-                      Generate Video
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="flex gap-3">
-                    <Textarea
-                      ref={inputRef}
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      onKeyDown={handleKeyDown}
-                      placeholder="Describe the video you want to create..."
-                      className="min-h-[52px] max-h-32 resize-none"
-                      rows={1}
-                      disabled={isLoading}
-                    />
-                    <Button
-                      onClick={sendMessage}
-                      disabled={!input.trim() || isLoading}
-                      size="icon"
-                      className="h-[52px] w-[52px] shrink-0"
-                    >
-                      {isLoading ? (
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                      ) : (
-                        <Send className="w-5 h-5" />
+                        </div>
                       )}
-                    </Button>
+                    </CardContent>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-2 text-center">
-                    Describe your video → Choose voiceover settings → Generate
-                  </p>
-                </>
-              )}
+                </Card>
+              ))}
+            </div>
+          </div>
+        );
+    }
+  };
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0 bg-background">
+      {/* Progress bar */}
+      {step !== "generating" && step !== "timeline" && (
+        <div className="shrink-0 border-b bg-card">
+          <div className="max-w-4xl mx-auto px-6 py-4">
+            <div className="flex items-center justify-between text-sm mb-2">
+              <span className="text-muted-foreground">Step {
+                step === "voiceover" ? 1 :
+                step === "script" ? 2 :
+                step === "assets" ? 3 : 4
+              } of 4</span>
+            </div>
+            <div className="h-2 bg-muted rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-primary transition-all"
+                style={{ 
+                  width: step === "voiceover" ? "25%" :
+                         step === "script" ? "50%" :
+                         step === "assets" ? "75%" : "100%"
+                }}
+              />
             </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* Content */}
+      {step === "generating" ? (
+        <div className="flex-1 flex items-center justify-center">
+          {renderStepContent()}
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-6 pb-24">
+            {renderStepContent()}
+          </div>
+        </div>
+      )}
+
+      {/* Navigation */}
+      {step !== "generating" && step !== "timeline" && (
+        <div className="shrink-0 border-t bg-card">
+          <div className="max-w-4xl mx-auto px-6 py-4 flex justify-between">
+            <Button
+              variant="outline"
+              onClick={goToPrevStep}
+              disabled={step === "voiceover"}
+            >
+              <ChevronLeft className="w-4 h-4 mr-1" />
+              Back
+            </Button>
+            <Button
+              onClick={goToNextStep}
+              disabled={!canProceed()}
+            >
+              {step === "describe" || (aiMode && step === "voiceover") ? (
+                <>
+                  <Sparkles className="w-4 h-4 mr-1" />
+                  Generate Video
+                </>
+              ) : (
+                <>
+                  Next
+                  <ChevronRight className="w-4 h-4 ml-1" />
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Scene swap dialog */}
+      <Dialog open={swapSceneIndex !== null} onOpenChange={(open) => !open && setSwapSceneIndex(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Switch Scene Clip</DialogTitle>
+            <DialogDescription>
+              {swapSceneIndex !== null && timeline?.scenes[swapSceneIndex] && (
+                <>
+                  <strong>Scene intent:</strong> {timeline.scenes[swapSceneIndex].intent}
+                  <br />
+                  Minimum duration: {timeline.scenes[swapSceneIndex].durationSec}s
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Search */}
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search clips..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              <Button 
+                onClick={() => swapSceneIndex !== null && timeline && handleSearchClips(timeline.scenes[swapSceneIndex].durationSec)}
+                disabled={isSearching}
+              >
+                {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+              </Button>
+            </div>
+
+            {/* Results */}
+            <ScrollArea className="h-64">
+              <div className="grid grid-cols-2 gap-3">
+                {searchResults.map((clip) => (
+                  <button
+                    key={clip.id}
+                    onClick={() => handleSwapClip(clip.id, clip.description)}
+                    className="text-left p-3 rounded-lg border hover:border-primary transition-colors"
+                  >
+                    <div className="aspect-video bg-muted rounded mb-2 flex items-center justify-center">
+                      {clip.thumbnailUrl ? (
+                        <img src={clip.thumbnailUrl} alt="" className="w-full h-full object-cover rounded" />
+                      ) : (
+                        <Film className="w-6 h-6 text-muted-foreground" />
+                      )}
+                    </div>
+                    <p className="text-sm font-medium line-clamp-2">{clip.description}</p>
+                    <p className="text-xs text-muted-foreground">{clip.durationSeconds}s</p>
+                  </button>
+                ))}
+              </div>
+              {searchResults.length === 0 && !isSearching && (
+                <div className="text-center py-8 text-muted-foreground">
+                  No matching clips found
+                </div>
+              )}
+            </ScrollArea>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

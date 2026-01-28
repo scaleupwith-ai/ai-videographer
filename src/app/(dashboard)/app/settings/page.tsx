@@ -1,260 +1,649 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { User, Palette, Plus, Trash2, Loader2, Save } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
+import { Badge } from "@/components/ui/badge";
+import { Loader2, Upload, X, Play, Film, Music, Type, Settings, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { createClient } from "@/lib/supabase/client";
-import type { BrandPreset } from "@/lib/database.types";
+
+interface UserSettings {
+  id?: string;
+  intro_asset_id: string | null;
+  outro_asset_id: string | null;
+  always_use_intro: boolean;
+  always_use_outro: boolean;
+  default_caption_words_per_block: number;
+  default_caption_font: string;
+  default_caption_style: {
+    fontSize: number;
+    color: string;
+    backgroundColor: string;
+    position: string;
+  };
+  default_music_volume: number;
+  default_voiceover_volume: number;
+  default_resolution: string;
+}
+
+interface MediaAsset {
+  id: string;
+  filename: string;
+  public_url: string;
+  duration_sec: number | null;
+}
+
+const CAPTION_FONTS = [
+  "Inter",
+  "Space Grotesk",
+  "Roboto",
+  "Open Sans",
+  "Montserrat",
+  "Poppins",
+  "Oswald",
+  "Bebas Neue",
+  "Impact",
+  "Arial Black",
+];
 
 export default function SettingsPage() {
-  const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [user, setUser] = useState<{ email: string } | null>(null);
-  const [brandPresets, setBrandPresets] = useState<BrandPreset[]>([]);
-  const [newPresetName, setNewPresetName] = useState("");
-  const [creatingPreset, setCreatingPreset] = useState(false);
+  const [settings, setSettings] = useState<UserSettings>({
+    intro_asset_id: null,
+    outro_asset_id: null,
+    always_use_intro: false,
+    always_use_outro: false,
+    default_caption_words_per_block: 3,
+    default_caption_font: "Inter",
+    default_caption_style: {
+      fontSize: 48,
+      color: "#ffffff",
+      backgroundColor: "#000000",
+      position: "bottom",
+    },
+    default_music_volume: 0.3,
+    default_voiceover_volume: 1.0,
+    default_resolution: "1080p",
+  });
+  
+  const [introAsset, setIntroAsset] = useState<MediaAsset | null>(null);
+  const [outroAsset, setOutroAsset] = useState<MediaAsset | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingIntro, setIsUploadingIntro] = useState(false);
+  const [isUploadingOutro, setIsUploadingOutro] = useState(false);
+  
+  const introInputRef = useRef<HTMLInputElement>(null);
+  const outroInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    loadData();
+    fetchSettings();
   }, []);
 
-  const loadData = async () => {
+  const fetchSettings = async () => {
     try {
-      const supabase = createClient();
-      
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setUser({ email: user.email || "" });
+      const res = await fetch("/api/user/settings");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.settings) {
+          setSettings(data.settings);
+          if (data.introAsset) setIntroAsset(data.introAsset);
+          if (data.outroAsset) setOutroAsset(data.outroAsset);
+        }
       }
-
-      const { data: presets } = await supabase
-        .from("brand_presets")
-        .select("*")
-        .order("created_at", { ascending: false });
-      
-      setBrandPresets((presets as BrandPreset[]) || []);
     } catch (error) {
-      console.error("Failed to load settings:", error);
+      console.error("Failed to fetch settings:", error);
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
-  const handleCreatePreset = async () => {
-    if (!newPresetName.trim()) {
-      toast.error("Please enter a preset name");
-      return;
-    }
-
-    setCreatingPreset(true);
+  const handleSave = async () => {
+    setIsSaving(true);
     try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
+      const res = await fetch("/api/user/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settings),
+      });
       
-      if (!user) {
-        toast.error("Not authenticated");
-        return;
+      if (!res.ok) {
+        throw new Error("Failed to save settings");
       }
-
-      const { data: preset, error } = await supabase
-        .from("brand_presets")
-        .insert({
-          owner_id: user.id,
-          name: newPresetName.trim(),
-          colors: {
-            primary: "#00b4d8",
-            secondary: "#0077b6",
-            accent: "#ff6b6b",
-            text: "#ffffff",
-            background: "#1a1a2e",
-          },
-          fonts: {
-            heading: "Space Grotesk",
-            body: "Inter",
-          },
-          safe_margins: {
-            top: 50,
-            bottom: 50,
-            left: 50,
-            right: 50,
-          },
-          overlay_style: "lower_third",
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      setBrandPresets((prev) => [preset as BrandPreset, ...prev]);
-      setNewPresetName("");
-      toast.success("Brand preset created");
+      
+      toast.success("Settings saved!");
     } catch (error) {
-      console.error("Failed to create preset:", error);
-      toast.error("Failed to create preset");
+      toast.error("Failed to save settings");
     } finally {
-      setCreatingPreset(false);
+      setIsSaving(false);
     }
   };
 
-  const handleDeletePreset = async (presetId: string) => {
-    if (!confirm("Delete this brand preset?")) return;
-
+  const handleUpload = async (file: File, type: "intro" | "outro") => {
+    const setUploading = type === "intro" ? setIsUploadingIntro : setIsUploadingOutro;
+    setUploading(true);
+    
     try {
-      const supabase = createClient();
-      const { error } = await supabase
-        .from("brand_presets")
-        .delete()
-        .eq("id", presetId);
-
-      if (error) throw error;
-
-      setBrandPresets((prev) => prev.filter((p) => p.id !== presetId));
-      toast.success("Preset deleted");
+      // Get duration first
+      const duration = await new Promise<number>((resolve) => {
+        const video = document.createElement("video");
+        video.preload = "metadata";
+        video.onloadedmetadata = () => {
+          resolve(Math.floor(video.duration * 10) / 10);
+          URL.revokeObjectURL(video.src);
+        };
+        video.onerror = () => resolve(5); // Default 5s
+        video.src = URL.createObjectURL(file);
+      });
+      
+      // Get presigned URL
+      const urlRes = await fetch("/api/assets/upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: file.name,
+          mime: file.type,
+          kind: "video",
+        }),
+      });
+      
+      if (!urlRes.ok) {
+        const errorData = await urlRes.json().catch(() => ({}));
+        console.error("Upload URL error:", errorData);
+        throw new Error(errorData.error || "Failed to get upload URL");
+      }
+      const { uploadUrl, objectKey } = await urlRes.json();
+      
+      // Upload to R2
+      const uploadRes = await fetch(uploadUrl, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": file.type },
+      });
+      
+      if (!uploadRes.ok) {
+        throw new Error(`Upload failed: ${uploadRes.status}`);
+      }
+      
+      // Complete upload
+      const completeRes = await fetch("/api/assets/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          objectKey,
+          kind: "video",
+          filename: file.name,
+          mime: file.type,
+          sizeBytes: file.size,
+          durationSec: duration,
+          metadata: {
+            name: `${type === "intro" ? "Intro" : "Outro"} Video`,
+            description: `User ${type} video`,
+          },
+        }),
+      });
+      
+      if (!completeRes.ok) {
+        const errorData = await completeRes.json().catch(() => ({}));
+        console.error("Complete upload error:", errorData);
+        throw new Error(errorData.error || "Failed to complete upload");
+      }
+      const { asset } = await completeRes.json();
+      console.log("Upload complete, asset:", asset);
+      
+      // Update local state
+      const newSettings = {
+        ...settings,
+        [type === "intro" ? "intro_asset_id" : "outro_asset_id"]: asset.id,
+        [type === "intro" ? "always_use_intro" : "always_use_outro"]: true,
+      };
+      setSettings(newSettings);
+      
+      if (type === "intro") {
+        setIntroAsset({
+          id: asset.id,
+          filename: asset.filename,
+          public_url: asset.public_url,
+          duration_sec: asset.duration_sec,
+        });
+      } else {
+        setOutroAsset({
+          id: asset.id,
+          filename: asset.filename,
+          public_url: asset.public_url,
+          duration_sec: asset.duration_sec,
+        });
+      }
+      
+      // Auto-save settings to database
+      const saveRes = await fetch("/api/user/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newSettings),
+      });
+      
+      if (!saveRes.ok) {
+        console.error("Failed to auto-save settings");
+      }
+      
+      toast.success(`${type === "intro" ? "Intro" : "Outro"} uploaded and saved!`);
+      
     } catch (error) {
-      console.error("Failed to delete preset:", error);
-      toast.error("Failed to delete preset");
+      toast.error(`Failed to upload ${type}`);
+      console.error(error);
+    } finally {
+      setUploading(false);
     }
   };
 
-  const handleSignOut = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/login");
+  const handleRemove = async (type: "intro" | "outro") => {
+    const newSettings = {
+      ...settings,
+      [type === "intro" ? "intro_asset_id" : "outro_asset_id"]: null,
+      [type === "intro" ? "always_use_intro" : "always_use_outro"]: false,
+    };
+    setSettings(newSettings);
+    if (type === "intro") {
+      setIntroAsset(null);
+    } else {
+      setOutroAsset(null);
+    }
+    
+    // Persist to database
+    try {
+      const saveRes = await fetch("/api/user/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newSettings),
+      });
+      
+      if (saveRes.ok) {
+        toast.success(`${type === "intro" ? "Intro" : "Outro"} removed`);
+      } else {
+        toast.error("Failed to save changes");
+      }
+    } catch (error) {
+      console.error("Failed to save settings:", error);
+      toast.error("Failed to save changes");
+    }
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div className="flex items-center justify-center min-h-[400px]">
         <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   return (
-    <div className="flex-1 overflow-auto">
-      <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b border-border">
-        <div className="px-6 py-4">
-          <h1 className="text-2xl font-semibold">Settings</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage your account and brand presets
+    <div className="h-full overflow-auto">
+      <div className="max-w-4xl mx-auto space-y-8 p-6 pb-24">
+        <div>
+          <h1 className="text-3xl font-bold flex items-center gap-3">
+            <Settings className="w-8 h-8" />
+            Video Settings
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Configure default settings for all your videos
           </p>
         </div>
-      </header>
 
-      <div className="max-w-3xl mx-auto p-6 space-y-6">
-        {/* Account Section */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <User className="w-5 h-5" />
-              <CardTitle>Account</CardTitle>
+      {/* Intro/Outro Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Film className="w-5 h-5" />
+            Intro & Outro
+          </CardTitle>
+          <CardDescription>
+            Upload custom intro and outro videos that will be automatically added to all your generated videos
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Intro */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="text-base font-medium">Intro Video</Label>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="always-intro" className="text-sm text-muted-foreground">
+                  Always use
+                </Label>
+                <Switch
+                  id="always-intro"
+                  checked={settings.always_use_intro}
+                  onCheckedChange={(checked) => setSettings({ ...settings, always_use_intro: checked })}
+                  disabled={!introAsset}
+                />
+              </div>
             </div>
-            <CardDescription>Your account information</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>Email</Label>
-              <Input value={user?.email || ""} disabled />
-            </div>
-            <Separator />
-            <Button variant="destructive" onClick={handleSignOut}>
-              Sign Out
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Brand Presets Section */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Palette className="w-5 h-5" />
-              <CardTitle>Brand Presets</CardTitle>
-            </div>
-            <CardDescription>
-              Create brand presets with your logo, colors, and styles for consistent videos
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Create new preset */}
-            <div className="flex gap-2">
-              <Input
-                placeholder="New preset name..."
-                value={newPresetName}
-                onChange={(e) => setNewPresetName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleCreatePreset();
-                }}
-              />
-              <Button onClick={handleCreatePreset} disabled={creatingPreset}>
-                {creatingPreset ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Plus className="w-4 h-4" />
-                )}
-              </Button>
-            </div>
-
-            <Separator />
-
-            {/* Existing presets */}
-            {brandPresets.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                No brand presets yet. Create one above.
-              </p>
+            
+            {introAsset ? (
+              <div className="flex items-center gap-4 p-4 bg-muted/50 rounded-lg">
+                <video
+                  src={introAsset.public_url}
+                  className="w-32 h-20 object-cover rounded"
+                  muted
+                  playsInline
+                />
+                <div className="flex-1">
+                  <p className="font-medium">{introAsset.filename}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {introAsset.duration_sec ? `${introAsset.duration_sec}s` : "Duration unknown"}
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => handleRemove("intro")}
+                >
+                  <Trash2 className="w-4 h-4 text-destructive" />
+                </Button>
+              </div>
             ) : (
-              <div className="space-y-3">
-                {brandPresets.map((preset) => (
-                  <div
-                    key={preset.id}
-                    className="flex items-center justify-between p-3 rounded-lg border border-border"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="flex gap-1">
-                        <div
-                          className="w-4 h-4 rounded"
-                          style={{ backgroundColor: preset.colors.primary }}
-                        />
-                        <div
-                          className="w-4 h-4 rounded"
-                          style={{ backgroundColor: preset.colors.secondary }}
-                        />
-                        <div
-                          className="w-4 h-4 rounded"
-                          style={{ backgroundColor: preset.colors.accent }}
-                        />
-                      </div>
-                      <span className="font-medium">{preset.name}</span>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-muted-foreground hover:text-destructive"
-                      onClick={() => handleDeletePreset(preset.id)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                ))}
+              <div
+                onClick={() => introInputRef.current?.click()}
+                className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 transition-colors"
+              >
+                {isUploadingIntro ? (
+                  <Loader2 className="w-8 h-8 animate-spin mx-auto text-muted-foreground" />
+                ) : (
+                  <>
+                    <Upload className="w-8 h-8 mx-auto text-muted-foreground mb-2" />
+                    <p className="text-sm text-muted-foreground">Click to upload intro video</p>
+                  </>
+                )}
               </div>
             )}
-          </CardContent>
-        </Card>
+            <input
+              ref={introInputRef}
+              type="file"
+              accept="video/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleUpload(file, "intro");
+              }}
+            />
+          </div>
+
+          {/* Outro */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="text-base font-medium">Outro Video</Label>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="always-outro" className="text-sm text-muted-foreground">
+                  Always use
+                </Label>
+                <Switch
+                  id="always-outro"
+                  checked={settings.always_use_outro}
+                  onCheckedChange={(checked) => setSettings({ ...settings, always_use_outro: checked })}
+                  disabled={!outroAsset}
+                />
+              </div>
+            </div>
+            
+            {outroAsset ? (
+              <div className="flex items-center gap-4 p-4 bg-muted/50 rounded-lg">
+                <video
+                  src={outroAsset.public_url}
+                  className="w-32 h-20 object-cover rounded"
+                  muted
+                  playsInline
+                />
+                <div className="flex-1">
+                  <p className="font-medium">{outroAsset.filename}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {outroAsset.duration_sec ? `${outroAsset.duration_sec}s` : "Duration unknown"}
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => handleRemove("outro")}
+                >
+                  <Trash2 className="w-4 h-4 text-destructive" />
+                </Button>
+              </div>
+            ) : (
+              <div
+                onClick={() => outroInputRef.current?.click()}
+                className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 transition-colors"
+              >
+                {isUploadingOutro ? (
+                  <Loader2 className="w-8 h-8 animate-spin mx-auto text-muted-foreground" />
+                ) : (
+                  <>
+                    <Upload className="w-8 h-8 mx-auto text-muted-foreground mb-2" />
+                    <p className="text-sm text-muted-foreground">Click to upload outro video</p>
+                  </>
+                )}
+              </div>
+            )}
+            <input
+              ref={outroInputRef}
+              type="file"
+              accept="video/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleUpload(file, "outro");
+              }}
+            />
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            💡 Intro plays before your video content. Outro plays after. Music will continue through both.
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Caption Settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Type className="w-5 h-5" />
+            Default Caption Settings
+          </CardTitle>
+          <CardDescription>
+            Configure how captions appear by default (can be changed per video)
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <Label>Words per Block</Label>
+              <Select
+                value={String(settings.default_caption_words_per_block)}
+                onValueChange={(v) => setSettings({ ...settings, default_caption_words_per_block: parseInt(v) })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1 word</SelectItem>
+                  <SelectItem value="2">2 words</SelectItem>
+                  <SelectItem value="3">3 words</SelectItem>
+                  <SelectItem value="4">4 words</SelectItem>
+                  <SelectItem value="5">5 words</SelectItem>
+                  <SelectItem value="6">6 words</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">How many words show at once</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Font</Label>
+              <Select
+                value={settings.default_caption_font}
+                onValueChange={(v) => setSettings({ ...settings, default_caption_font: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CAPTION_FONTS.map((font) => (
+                    <SelectItem key={font} value={font} style={{ fontFamily: font }}>
+                      {font}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label>Text Color</Label>
+              <div className="flex gap-2">
+                <Input
+                  type="color"
+                  value={settings.default_caption_style.color}
+                  onChange={(e) => setSettings({
+                    ...settings,
+                    default_caption_style: { ...settings.default_caption_style, color: e.target.value }
+                  })}
+                  className="w-12 h-10 p-1"
+                />
+                <Input
+                  value={settings.default_caption_style.color}
+                  onChange={(e) => setSettings({
+                    ...settings,
+                    default_caption_style: { ...settings.default_caption_style, color: e.target.value }
+                  })}
+                  className="flex-1"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Background Color</Label>
+              <div className="flex gap-2">
+                <Input
+                  type="color"
+                  value={settings.default_caption_style.backgroundColor}
+                  onChange={(e) => setSettings({
+                    ...settings,
+                    default_caption_style: { ...settings.default_caption_style, backgroundColor: e.target.value }
+                  })}
+                  className="w-12 h-10 p-1"
+                />
+                <Input
+                  value={settings.default_caption_style.backgroundColor}
+                  onChange={(e) => setSettings({
+                    ...settings,
+                    default_caption_style: { ...settings.default_caption_style, backgroundColor: e.target.value }
+                  })}
+                  className="flex-1"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Position</Label>
+              <Select
+                value={settings.default_caption_style.position}
+                onValueChange={(v) => setSettings({
+                  ...settings,
+                  default_caption_style: { ...settings.default_caption_style, position: v }
+                })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="top">Top</SelectItem>
+                  <SelectItem value="center">Center</SelectItem>
+                  <SelectItem value="bottom">Bottom</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Preview */}
+          <div className="bg-black rounded-lg aspect-video flex items-end justify-center p-8 relative">
+            <div
+              className={`absolute ${
+                settings.default_caption_style.position === "top" ? "top-8" :
+                settings.default_caption_style.position === "center" ? "top-1/2 -translate-y-1/2" :
+                "bottom-8"
+              } left-1/2 -translate-x-1/2`}
+            >
+              <span
+                style={{
+                  fontFamily: settings.default_caption_font,
+                  fontSize: "24px",
+                  color: settings.default_caption_style.color,
+                  backgroundColor: settings.default_caption_style.backgroundColor + "cc",
+                  padding: "8px 16px",
+                  borderRadius: "4px",
+                }}
+              >
+                {"Caption ".repeat(settings.default_caption_words_per_block).trim()}
+              </span>
+            </div>
+            <Badge variant="secondary" className="absolute top-2 right-2">Preview</Badge>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Audio Settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Music className="w-5 h-5" />
+            Default Audio Levels
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <Label>Music Volume</Label>
+                <span className="text-sm text-muted-foreground">{Math.round(settings.default_music_volume * 100)}%</span>
+              </div>
+              <Slider
+                value={[settings.default_music_volume]}
+                onValueChange={([v]) => setSettings({ ...settings, default_music_volume: v })}
+                min={0}
+                max={1}
+                step={0.05}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <Label>Voiceover Volume</Label>
+                <span className="text-sm text-muted-foreground">{Math.round(settings.default_voiceover_volume * 100)}%</span>
+              </div>
+              <Slider
+                value={[settings.default_voiceover_volume]}
+                onValueChange={([v]) => setSettings({ ...settings, default_voiceover_volume: v })}
+                min={0}
+                max={1}
+                step={0.05}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Save Button */}
+      <div className="flex justify-end">
+        <Button onClick={handleSave} disabled={isSaving} size="lg">
+          {isSaving ? (
+            <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving...</>
+          ) : (
+            "Save Settings"
+          )}
+        </Button>
+      </div>
       </div>
     </div>
   );
 }
-

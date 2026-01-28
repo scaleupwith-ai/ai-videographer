@@ -5,7 +5,54 @@ import { z } from "zod";
 // Single source of truth for video project structure
 // ============================================
 
-// Scene overlay configuration
+// ============================================
+// PRESET DEFINITIONS - Template System
+// Maps to FFmpeg filtergraph at render time
+// ============================================
+
+// Simplified transition presets for user selection
+export const TransitionPresets = [
+  "cut",      // No transition, hard cut
+  "fade",     // Cross-dissolve fade
+  "slide",    // Slide left/right
+  "wipe",     // Wipe transition
+] as const;
+
+export const TransitionPresetSchema = z.enum(TransitionPresets);
+export type TransitionPreset = z.infer<typeof TransitionPresetSchema>;
+
+// Map transition presets to FFmpeg xfade types
+export const transitionPresetToFFmpeg: Record<TransitionPreset, string | null> = {
+  cut: null,           // No xfade, just concatenate
+  fade: "fade",        // xfade=fade
+  slide: "slideleft",  // xfade=slideleft
+  wipe: "wipeleft",    // xfade=wipeleft
+};
+
+// Clip animation presets - applied during render
+export const AnimationPresets = [
+  "none",           // Static clip, no animation
+  "subtle_zoom",    // Slow zoom in (Ken Burns light)
+  "pan_left",       // Pan from right to left
+  "pan_right",      // Pan from left to right
+  "punch_in",       // Quick zoom punch effect
+] as const;
+
+export const AnimationPresetSchema = z.enum(AnimationPresets);
+export type AnimationPreset = z.infer<typeof AnimationPresetSchema>;
+
+// Text style presets for overlays
+export const TextStylePresets = [
+  "lower_third",    // Classic lower-third bar
+  "headline",       // Large centered headline
+  "captions",       // Subtitle-style captions
+  "minimal",        // Simple text, no background
+] as const;
+
+export const TextStylePresetSchema = z.enum(TextStylePresets);
+export type TextStylePreset = z.infer<typeof TextStylePresetSchema>;
+
+// Scene overlay configuration (legacy, kept for backward compatibility)
 export const OverlaySchema = z.object({
   title: z.string().nullable().optional(),
   subtitle: z.string().nullable().optional(),
@@ -13,17 +60,78 @@ export const OverlaySchema = z.object({
   stylePreset: z.enum(["boxed", "lower_third", "minimal"]).default("lower_third"),
 });
 
+// Text overlay item with timing and position
+export const TextOverlaySchema = z.object({
+  id: z.string(),
+  text: z.string(),
+  x: z.number().min(0).max(100).default(50),  // Percentage from left
+  y: z.number().min(0).max(100).default(80),  // Percentage from top
+  startTime: z.number().min(0).default(0),    // Start time in seconds
+  duration: z.number().min(0).default(0),      // Duration (0 = entire video)
+  style: TextStylePresetSchema.default("lower_third"),
+  // Custom style overrides
+  color: z.string().default("#ffffff"),
+  fontSize: z.number().min(12).max(200).default(48),
+  fontFamily: z.string().default("Inter"),
+  animation: z.enum(["none", "fade_in", "slide_up", "typewriter"]).default("fade_in"),
+});
+
+export type TextOverlay = z.infer<typeof TextOverlaySchema>;
+
+// FFmpeg xfade transitions (full list for internal use)
+export const TransitionTypes = [
+  "none",
+  "fade",
+  "fadeblack",
+  "fadewhite",
+  "wipeleft",
+  "wiperight",
+  "wipeup",
+  "wipedown",
+  "slideleft",
+  "slideright",
+  "slideup",
+  "slidedown",
+  "circlecrop",
+  "circleopen",
+  "circleclose",
+  "dissolve",
+  "pixelize",
+  "radial",
+  "smoothleft",
+  "smoothright",
+  "smoothup",
+  "smoothdown",
+] as const;
+
+export const TransitionSchema = z.enum(TransitionTypes);
+
 // Individual scene in the timeline
 export const SceneSchema = z.object({
   id: z.string(),
   assetId: z.string().nullable(), // Reference to media_assets.id
+  clipId: z.string().nullable().optional(), // Reference to clips.id (for b-roll)
+  clipUrl: z.string().nullable().optional(), // Direct URL to video file
+  isUserAsset: z.boolean().optional(), // Whether this is a user-uploaded asset
   kind: z.enum(["video", "image"]),
   inSec: z.number().min(0).default(0), // Trim start point
   outSec: z.number().min(0), // Trim end point
   durationSec: z.number().min(0), // Computed: outSec - inSec
   cropMode: z.enum(["cover", "contain", "fill"]).default("cover"),
   overlays: OverlaySchema.optional(),
-  transitionOut: z.enum(["none", "crossfade", "fade_black"]).nullable().optional(),
+  
+  // Transition preset (simplified for user selection)
+  transition: TransitionPresetSchema.nullable().optional(),
+  // Legacy: FFmpeg xfade transition type (internal use)
+  transitionOut: TransitionSchema.nullable().optional(),
+  transitionDuration: z.number().min(0).max(2).default(0.5).optional(),
+  
+  // Animation preset for the clip
+  animation: AnimationPresetSchema.default("none").optional(),
+  
+  // Scene intent/description (for AI context)
+  intent: z.string().nullable().optional(),
+  clipDescription: z.string().nullable().optional(),
 });
 
 // Music track configuration
@@ -38,11 +146,22 @@ export const VoiceoverSchema = z.object({
   volume: z.number().min(0).max(1).default(1.0),
 });
 
+// Single caption segment with timing
+export const CaptionSegmentSchema = z.object({
+  start: z.number(), // Start time in seconds
+  end: z.number(),   // End time in seconds  
+  text: z.string(),  // Caption text
+});
+
 // Captions configuration
 export const CaptionsSchema = z.object({
   enabled: z.boolean().default(false),
   burnIn: z.boolean().default(false), // Burn into video vs separate SRT
   srtAssetId: z.string().nullable().optional(),
+  wordsPerBlock: z.number().default(3).optional(),
+  font: z.string().default("Inter").optional(),
+  startOffset: z.number().default(0).optional(), // Offset for intro
+  segments: z.array(CaptionSegmentSchema).optional(), // Timed caption segments
 });
 
 // Brand configuration for this project
@@ -108,10 +227,37 @@ export const TimelineV1Schema = z.object({
   version: z.literal(1),
   project: ProjectMetaSchema,
   scenes: z.array(SceneSchema),
+  textOverlays: z.array(TextOverlaySchema).optional(), // Global text overlays with timing
   global: GlobalSchema,
   rendering: z.object({
     output: RenderingOutputSchema,
+    // Additional rendering metadata
+    voiceoverDurationSec: z.number().optional(),
+    totalDurationSec: z.number().optional(),
+    introDurationSec: z.number().optional(),
+    outroDurationSec: z.number().optional(),
   }),
+  // Sound effects with timing
+  soundEffects: z.array(z.object({
+    id: z.string(),
+    title: z.string(),
+    audioUrl: z.string(),
+    atTimeSec: z.number(),
+    volume: z.number().min(0).max(1).default(0.5),
+  })).optional(),
+  // Image overlays with timing
+  imageOverlays: z.array(z.object({
+    id: z.string(),
+    title: z.string(),
+    imageUrl: z.string(),
+    atTimeSec: z.number(),
+    durationSec: z.number(),
+    x: z.number().default(50),
+    y: z.number().default(50),
+    scale: z.number().default(1),
+    width: z.number().nullable(),
+    height: z.number().nullable(),
+  })).optional(),
 });
 
 // TypeScript types derived from Zod schemas
@@ -126,6 +272,9 @@ export type RenderingOutput = z.infer<typeof RenderingOutputSchema>;
 export type ProjectMeta = z.infer<typeof ProjectMetaSchema>;
 export type Global = z.infer<typeof GlobalSchema>;
 export type TimelineV1 = z.infer<typeof TimelineV1Schema>;
+
+// Re-export preset types for convenience
+export { TransitionPreset, AnimationPreset, TextStylePreset };
 
 // ============================================
 // Timeline Utilities
@@ -188,12 +337,18 @@ export function createEmptyTimeline(params: {
 export function createScene(params: {
   id: string;
   assetId: string | null;
+  clipId?: string | null;
+  clipUrl?: string | null;
   kind: "video" | "image";
   durationSec: number;
+  intent?: string;
+  clipDescription?: string;
 }): Scene {
   return {
     id: params.id,
     assetId: params.assetId,
+    clipId: params.clipId ?? null,
+    clipUrl: params.clipUrl ?? null,
     kind: params.kind,
     inSec: 0,
     outSec: params.durationSec,
@@ -205,7 +360,37 @@ export function createScene(params: {
       position: "lower_third",
       stylePreset: "lower_third",
     },
+    transition: "cut",
     transitionOut: null,
+    transitionDuration: 0.5,
+    animation: "none",
+    intent: params.intent ?? null,
+    clipDescription: params.clipDescription ?? null,
+  };
+}
+
+/**
+ * Create a new text overlay with default values
+ */
+export function createTextOverlay(params: {
+  id: string;
+  text: string;
+  startTime: number;
+  duration?: number;
+  style?: TextStylePreset;
+}): TextOverlay {
+  return {
+    id: params.id,
+    text: params.text,
+    x: 50,
+    y: 80,
+    startTime: params.startTime,
+    duration: params.duration ?? 3,
+    style: params.style ?? "lower_third",
+    color: "#ffffff",
+    fontSize: 48,
+    fontFamily: "Inter",
+    animation: "fade_in",
   };
 }
 

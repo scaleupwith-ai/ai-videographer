@@ -188,3 +188,9 @@ export function SceneEditor({ project, assets, brandPresets }: SceneEditorProps)
   );
 }
 
+
+
+
+
+
+

@@ -31,7 +31,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const { name, eleven_labs_id, description, profile_image_url } = await request.json();
+    const { name, eleven_labs_id, description, profile_image_url, preview_url } = await request.json();
 
     if (!name || !eleven_labs_id) {
       return NextResponse.json({ error: "Name and ElevenLabs ID are required" }, { status: 400 });
@@ -46,6 +46,7 @@ export async function POST(request: NextRequest) {
         eleven_labs_id,
         description,
         profile_image_url,
+        preview_url,
       })
       .select()
       .single();

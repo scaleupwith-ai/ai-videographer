@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
-import { parseGDriveLink, getDownloadUrl } from "@/lib/gdrive";
 import { TimelineV1Schema } from "@/lib/timeline/v1";
 import { generateVoiceover, estimateSpeechDuration } from "@/lib/elevenlabs";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
@@ -74,62 +73,17 @@ export async function POST(request: NextRequest) {
     // Create a map of clip ID to clip data
     const clipMap = new Map(clips.map(c => [c.id, c]));
 
-    // First, create media_assets entries for each clip (so FFmpeg worker can download them)
-    // Use adminSupabase to bypass RLS
-    const assetPromises = clips.map(async (clip) => {
-      const { fileId, directUrl } = parseGDriveLink(clip.clip_link);
-      if (!fileId || !directUrl) {
-        throw new Error(`Invalid clip link for clip ${clip.id}`);
-      }
-
-      // Check if asset already exists for this clip
-      const { data: existingAsset } = await adminSupabase
-        .from("media_assets")
-        .select("id")
-        .eq("object_key", `gdrive:${fileId}`)
-        .eq("owner_id", user.id)
-        .single();
-
-      if (existingAsset) {
-        return { clipId: clip.id, assetId: existingAsset.id };
-      }
-
-      // Create new media asset entry using admin client
-      // Column names: object_key, public_url, kind (enum: video, image, audio, srt, logo)
-      const { data: newAsset, error: assetError } = await adminSupabase
-        .from("media_assets")
-        .insert({
-          owner_id: user.id,
-          filename: `clip-${clip.id}.mp4`,
-          mime_type: "video/mp4",
-          size_bytes: 0, // Unknown for GDrive
-          object_key: `gdrive:${fileId}`,
-          public_url: getDownloadUrl(fileId),
-          kind: "video",
-          duration_sec: clip.duration_seconds,
-        })
-        .select()
-        .single();
-
-      if (assetError || !newAsset) {
-        console.error("Asset creation error:", assetError);
-        throw new Error(`Failed to create asset for clip ${clip.id}`);
-      }
-
-      return { clipId: clip.id, assetId: newAsset.id };
-    });
-
-    const assetMappings = await Promise.all(assetPromises);
-    const clipToAsset = new Map(assetMappings.map(m => [m.clipId, m.assetId]));
-
-    // Build the timeline JSON
+    // B-ROLL clips are referenced directly via clip_link - NO media_assets needed
+    // Build the timeline JSON with direct clip URLs
     const scenes = timeline.scenes.map((scene, index) => {
       const clip = clipMap.get(scene.clipId);
-      const assetId = clipToAsset.get(scene.clipId);
       
       return {
         id: `scene-${index + 1}`,
-        assetId: assetId || null,
+        assetId: null, // B-roll doesn't use media_assets
+        clipId: scene.clipId, // Reference to clips table
+        clipUrl: clip?.clip_link || null, // Direct URL to video
+        isUserAsset: false, // This is b-roll
         kind: "video" as const,
         inSec: scene.inSec,
         outSec: scene.outSec,

@@ -17,3 +17,9 @@ export default async function DashboardPage() {
   return <DashboardContent initialProjects={projects} />;
 }
 
+
+
+
+
+
+

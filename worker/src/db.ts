@@ -45,6 +45,22 @@ export interface RenderJob {
   thumbnail_url: string | null;
 }
 
+// Text overlay type
+export interface TextOverlay {
+  id: string;
+  text: string;
+  x: number;
+  y: number;
+  startTime: number;
+  duration: number;
+  style: {
+    color: string;
+    fontSize: number;
+    fontFamily: string;
+    duration: number;
+  };
+}
+
 // Timeline types (simplified for worker)
 export interface TimelineV1 {
   version: number;
@@ -57,10 +73,18 @@ export interface TimelineV1 {
     fps: number;
   };
   scenes: Scene[];
+  textOverlays?: TextOverlay[];
   global: {
-    music: { assetId: string | null; volume: number };
-    voiceover: { assetId: string | null; volume: number };
-    captions: { enabled: boolean; burnIn: boolean };
+    music: { assetId: string | null; audioUrl?: string | null; volume: number };
+    voiceover: { assetId: string | null; volume: number; startOffset?: number };
+    captions: { 
+      enabled: boolean; 
+      burnIn: boolean;
+      font?: string;
+      wordsPerBlock?: number;
+      startOffset?: number;
+      segments?: Array<{ start: number; end: number; text: string }>;
+    };
     brand: {
       logoAssetId: string | null;
       logoPosition: string;
@@ -69,23 +93,71 @@ export interface TimelineV1 {
     };
     export: { codec: string; bitrateMbps: number; crf?: number; audioKbps: number };
   };
+  soundEffects?: Array<{
+    id: string;
+    title: string;
+    audioUrl: string;
+    atTimeSec: number;
+    volume: number;
+  }>;
+  imageOverlays?: Array<{
+    id: string;
+    title: string;
+    imageUrl: string;
+    atTimeSec: number;
+    durationSec: number;
+    x: number;
+    y: number;
+    scale: number;
+    width: number | null;
+    height: number | null;
+  }>;
+  rendering?: {
+    output: { url: string | null; thumbnailUrl: string | null; durationSec: number | null; sizeBytes: number | null };
+    voiceoverDurationSec?: number; // Store voiceover duration to prevent speech cutoff
+    totalDurationSec?: number;
+    introDurationSec?: number;
+    outroDurationSec?: number;
+    // Talking head specific
+    isTalkingHead?: boolean;
+    userAudioAssetIds?: string[]; // Asset IDs for user videos with audio
+  };
+  // Audio tracks for talking head videos
+  audioTracks?: Array<{
+    id: string;
+    assetId: string;
+    type: string;
+    startOffset: number;
+    volume: number;
+  }>;
 }
 
 export interface Scene {
   id: string;
-  assetId: string | null;
+  assetId: string | null; // For user assets (media_assets table)
+  clipId?: string; // For b-roll clips (clips table)
+  clipUrl?: string; // Direct URL to video file (for b-roll)
+  isUserAsset?: boolean;
+  isTalkingHead?: boolean; // Scene shows user speaking
+  isBroll?: boolean; // Scene is B-roll footage
   kind: string;
   inSec: number;
   outSec: number;
   durationSec: number;
   cropMode: string;
   overlays?: {
-    title?: string | null;
-    subtitle?: string | null;
-    position?: string;
-    stylePreset?: string;
+    text?: string | null;
+    x?: number; // 0-100 percentage
+    y?: number; // 0-100 percentage
+    style?: {
+      color: string;
+      fontSize: number;
+      fontFamily: string;
+      duration: number;
+    };
   };
   transitionOut?: string | null;
+  transitionDuration?: number; // Duration of xfade transition in seconds
 }
 
 /**
@@ -215,5 +287,24 @@ export async function updateProjectOutput(
   if (data?.durationSec) updates.duration_sec = data.durationSec;
 
   await supabase.from("projects").update(updates).eq("id", projectId);
+}
+
+/**
+ * Get queued render jobs from database (for polling when Redis is unavailable)
+ */
+export async function getQueuedJobs(limit: number = 1): Promise<{ id: string; project_id: string }[]> {
+  const { data, error } = await supabase
+    .from("render_jobs")
+    .select("id, project_id")
+    .eq("status", "queued")
+    .order("created_at", { ascending: true })
+    .limit(limit);
+
+  if (error) {
+    console.error("Error fetching queued jobs:", error);
+    return [];
+  }
+
+  return data || [];
 }
 

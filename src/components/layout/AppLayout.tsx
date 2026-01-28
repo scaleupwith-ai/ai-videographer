@@ -6,13 +6,17 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   Film,
   FolderOpen,
-  Library,
+  ImageIcon,
   Plus,
   Settings,
   LogOut,
   ChevronLeft,
   ChevronRight,
   CreditCard,
+  Globe,
+  LayoutTemplate,
+  UserSquare2,
+  Video,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -60,7 +64,11 @@ export function AppLayout({ children, projects = [] }: AppLayoutProps) {
 
   const navItems = [
     { href: "/app", icon: FolderOpen, label: "Projects" },
-    { href: "/app/library", icon: Library, label: "Library" },
+    { href: "/app/talking-head", icon: UserSquare2, label: "Talking Head" },
+    { href: "/app/jobs", icon: Video, label: "Video Analysis" },
+    { href: "/app/templates", icon: LayoutTemplate, label: "Templates" },
+    { href: "/app/assets", icon: ImageIcon, label: "My Assets" },
+    { href: "/app/public-assets", icon: Globe, label: "Public Assets" },
     { href: "/app/billing", icon: CreditCard, label: "Billing" },
   ];
 
@@ -86,13 +94,36 @@ export function AppLayout({ children, projects = [] }: AppLayoutProps) {
                     AI Videographer
                   </span>
                 </Link>
-                <ThemeToggle />
+                <div className="flex items-center gap-1">
+                  <ThemeToggle />
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setCollapsed(true)}
+                        className="h-8 w-8 text-sidebar-foreground/50 hover:text-sidebar-foreground"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right">Collapse Sidebar</TooltipContent>
+                  </Tooltip>
+                </div>
               </>
             )}
             {collapsed && (
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center mx-auto">
-                <Film className="w-5 h-5 text-primary-foreground" />
-              </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => setCollapsed(false)}
+                    className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center mx-auto hover:scale-105 transition-transform"
+                  >
+                    <ChevronRight className="w-5 h-5 text-primary-foreground" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">Expand Sidebar</TooltipContent>
+              </Tooltip>
             )}
           </div>
 
@@ -159,16 +190,16 @@ export function AppLayout({ children, projects = [] }: AppLayoutProps) {
                       key={project.id}
                       href={`/app/projects/${project.id}`}
                       className={cn(
-                        "flex items-center gap-2 px-2 py-2 rounded-md text-sm transition-colors",
+                        "flex items-center gap-2 px-2 py-2 rounded-md text-sm transition-colors overflow-hidden",
                         pathname === `/app/projects/${project.id}`
                           ? "bg-sidebar-accent text-sidebar-accent-foreground"
                           : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50"
                       )}
                     >
-                      <div className="flex-1 truncate">{project.title}</div>
+                      <div className="flex-1 min-w-0 truncate max-w-[100px]">{project.title}</div>
                       <Badge
                         variant="secondary"
-                        className={cn("text-xs shrink-0", statusColors[project.status])}
+                        className={cn("text-[10px] shrink-0 px-1.5 py-0.5", statusColors[project.status])}
                       >
                         {statusLabels[project.status]}
                       </Badge>
@@ -211,29 +242,10 @@ export function AppLayout({ children, projects = [] }: AppLayoutProps) {
               {collapsed && <TooltipContent side="right">Sign Out</TooltipContent>}
             </Tooltip>
           </div>
-
-          {/* Collapse toggle */}
-          <div className="p-2 border-t border-sidebar-border">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setCollapsed(!collapsed)}
-              className="w-full justify-center text-sidebar-foreground/50 hover:text-sidebar-foreground"
-            >
-              {collapsed ? (
-                <ChevronRight className="w-4 h-4" />
-              ) : (
-                <>
-                  <ChevronLeft className="w-4 h-4 mr-2" />
-                  Collapse
-                </>
-              )}
-            </Button>
-          </div>
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 flex flex-col overflow-hidden">
+        <main className="flex-1 flex flex-col min-h-0 overflow-y-auto">
           {children}
         </main>
       </div>

@@ -10,31 +10,47 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get user credits
-    const { data: credits, error } = await supabase
-      .from("user_credits")
+    // Get user credits from user_profiles
+    const { data: profile, error } = await supabase
+      .from("user_profiles")
       .select("credits")
-      .eq("user_id", user.id)
+      .eq("id", user.id)
       .single();
 
     if (error) {
-      // If no record exists, create one with default credits
+      // If no profile exists, create one with default credits
       if (error.code === "PGRST116") {
-        const { data: newCredits } = await supabase
-          .from("user_credits")
-          .insert({ user_id: user.id, credits: 3 })
+        const { data: newProfile } = await supabase
+          .from("user_profiles")
+          .insert({ 
+            id: user.id, 
+            credits: 1,
+            default_video_quality: '1080p',
+          })
           .select("credits")
           .single();
         
-        return NextResponse.json({ credits: newCredits?.credits || 3 });
+        return NextResponse.json({ credits: newProfile?.credits || 1 });
       }
-      throw error;
+      
+      // Try legacy user_credits table as fallback
+      const { data: legacyCredits } = await supabase
+        .from("user_credits")
+        .select("credits")
+        .eq("user_id", user.id)
+        .single();
+      
+      if (legacyCredits) {
+        return NextResponse.json({ credits: legacyCredits.credits });
+      }
+      
+      // Default to 1 credit
+      return NextResponse.json({ credits: 1 });
     }
 
-    return NextResponse.json({ credits: credits.credits });
+    return NextResponse.json({ credits: profile?.credits ?? 1 });
   } catch (error) {
     console.error("Credits GET error:", error);
     return NextResponse.json({ error: "Failed to fetch credits" }, { status: 500 });
   }
 }
-

@@ -28,3 +28,9 @@ CREATE POLICY "Service role can manage voices" ON voices
 -- INSERT INTO voices (name, eleven_labs_id, description, is_default) VALUES
 -- ('Rachel', 'EXAVITQu4vr4xnSDxMaL', 'Warm female voice, great for narration', true);
 
+
+
+
+
+
+

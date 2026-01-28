@@ -102,3 +102,9 @@ export function estimateSpeechDuration(text: string): number {
   return (words / wordsPerMinute) * 60; // Returns seconds
 }
 
+
+
+
+
+
+

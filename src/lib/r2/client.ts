@@ -70,11 +70,30 @@ export async function deleteObject(objectKey: string): Promise<void> {
  */
 export function generateObjectKey(
   userId: string,
-  kind: "video" | "image" | "audio" | "srt" | "logo" | "render",
+  kind: "video" | "image" | "audio" | "srt" | "logo" | "render" | "temp",
   filename: string
 ): string {
   const timestamp = Date.now();
   const sanitizedFilename = filename.replace(/[^a-zA-Z0-9.-]/g, "_");
   return `${userId}/${kind}s/${timestamp}-${sanitizedFilename}`;
+}
+
+/**
+ * Upload a buffer directly to R2 and return the public URL
+ */
+export async function uploadBuffer(
+  objectKey: string,
+  buffer: Buffer,
+  contentType: string
+): Promise<string> {
+  const command = new PutObjectCommand({
+    Bucket: BUCKET,
+    Key: objectKey,
+    Body: buffer,
+    ContentType: contentType,
+  });
+  
+  await r2Client.send(command);
+  return getPublicUrl(objectKey);
 }
 

@@ -42,6 +42,8 @@ interface Project {
   created_at: string;
   updated_at: string;
   timeline_json: Record<string, unknown> | null;
+  thumbnail_url: string | null;
+  output_url: string | null;
 }
 
 interface DashboardContentProps {
@@ -91,7 +93,6 @@ export function DashboardContent({ initialProjects }: DashboardContentProps) {
       
       if (!res.ok) throw new Error("Failed to delete");
       
-      toast.success("Project deleted");
       router.refresh();
     } catch {
       toast.error("Failed to delete project");
@@ -106,7 +107,6 @@ export function DashboardContent({ initialProjects }: DashboardContentProps) {
       
       if (!res.ok) throw new Error("Failed to duplicate");
       
-      toast.success("Project duplicated");
       router.refresh();
     } catch {
       toast.error("Failed to duplicate project");
@@ -138,7 +138,7 @@ export function DashboardContent({ initialProjects }: DashboardContentProps) {
   }
 
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="flex-1 min-h-0">
       {/* Header */}
       <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b border-border">
         <div className="flex items-center justify-between px-6 py-4">
@@ -170,9 +170,17 @@ export function DashboardContent({ initialProjects }: DashboardContentProps) {
               >
                 {/* Thumbnail */}
                 <div className="aspect-video bg-muted relative overflow-hidden rounded-t-lg">
-                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-primary/10 to-accent/10">
-                    <Film className="w-12 h-12 text-muted-foreground/50" />
-                  </div>
+                  {project.thumbnail_url ? (
+                    <img 
+                      src={project.thumbnail_url} 
+                      alt={project.title}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-primary/10 to-accent/10">
+                      <Film className="w-12 h-12 text-muted-foreground/50" />
+                    </div>
+                  )}
                   {project.status === "finished" && (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Play className="w-12 h-12 text-white" />

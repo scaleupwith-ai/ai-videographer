@@ -29,7 +29,9 @@ import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow, formatDuration } from "@/lib/date";
 import { toast } from "sonner";
+import confetti from "canvas-confetti";
 import type { Project, RenderJob } from "@/lib/database.types";
+import { RenderProgress } from "./RenderProgress";
 
 interface ProjectViewerProps {
   project: Project;
@@ -69,6 +71,7 @@ export function ProjectViewer({ project: initialProject, renderJob: initialRende
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [deleting, setDeleting] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
 
   // Poll for render job updates if rendering
   useEffect(() => {
@@ -87,6 +90,21 @@ export function ProjectViewer({ project: initialProject, renderJob: initialRende
             if (projRes.ok) {
               const projData = await projRes.json();
               setProject(projData.project);
+              
+              // Celebration confetti when render finishes!
+              if (data.job.status === "finished") {
+                confetti({
+                  particleCount: 100,
+                  spread: 70,
+                  origin: { y: 0.6 },
+                });
+                // Second burst
+                setTimeout(() => {
+                  confetti({ particleCount: 50, angle: 60, spread: 55, origin: { x: 0 } });
+                  confetti({ particleCount: 50, angle: 120, spread: 55, origin: { x: 1 } });
+                }, 250);
+                toast.success("Video rendered successfully!");
+              }
             }
           }
         }
@@ -109,7 +127,6 @@ export function ProjectViewer({ project: initialProject, renderJob: initialRende
       
       if (!res.ok) throw new Error("Failed to delete");
       
-      toast.success("Project deleted");
       router.push("/app");
     } catch {
       toast.error("Failed to delete project");
@@ -127,7 +144,6 @@ export function ProjectViewer({ project: initialProject, renderJob: initialRende
       if (!res.ok) throw new Error("Failed to duplicate");
       
       const { project: newProject } = await res.json();
-      toast.success("Project duplicated");
       router.push(`/app/projects/${newProject.id}`);
     } catch {
       toast.error("Failed to duplicate project");
@@ -145,7 +161,6 @@ export function ProjectViewer({ project: initialProject, renderJob: initialRende
       const { job } = await res.json();
       setRenderJob(job);
       setProject((p) => ({ ...p, status: "rendering" }));
-      toast.success("Render started");
     } catch {
       toast.error("Failed to start render");
     }
@@ -242,19 +257,52 @@ export function ProjectViewer({ project: initialProject, renderJob: initialRende
       {/* Content */}
       <div className="flex-1 overflow-auto p-6">
         <div className="max-w-5xl mx-auto space-y-6">
+          {/* Edit in Studio Button - Show when finished */}
+          {project.status === "finished" && (
+            <div className="flex justify-center">
+              <Button 
+                size="lg" 
+                variant="outline"
+                onClick={() => router.push(`/app/projects/${project.id}/edit`)}
+                className="gap-2"
+              >
+                <Pencil className="w-5 h-5" />
+                Edit Video in Studio
+                <ArrowLeft className="w-4 h-4 rotate-180" />
+              </Button>
+            </div>
+          )}
+
           {/* Video Player or Status */}
-          {project.status === "finished" && project.output_url ? (
+          {project.status === "finished" && project.output_url && project.output_url.trim() !== "" ? (
             <Card className="overflow-hidden">
               <div className="aspect-video bg-black relative">
                 <video
                   ref={videoRef}
-                  src={project.output_url}
                   className="w-full h-full"
-                  onTimeUpdate={handleTimeUpdate}
+                  onTimeUpdate={(e) => {
+                    if (!isBuffering) {
+                      setCurrentTime(e.currentTarget.currentTime);
+                    }
+                  }}
                   onLoadedMetadata={handleLoadedMetadata}
                   onEnded={() => setIsPlaying(false)}
+                  onWaiting={() => setIsBuffering(true)}
+                  onPlaying={() => setIsBuffering(false)}
+                  onCanPlay={() => setIsBuffering(false)}
+                  onError={(e) => console.error("Video error:", e.currentTarget.error)}
                   muted={isMuted}
-                />
+                  playsInline
+                >
+                  <source src={project.output_url} type="video/mp4" />
+                </video>
+                
+                {/* Buffering spinner */}
+                {isBuffering && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                    <Loader2 className="w-12 h-12 text-white animate-spin" />
+                  </div>
+                )}
                 
                 {/* Video Controls Overlay */}
                 <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
@@ -312,37 +360,10 @@ export function ProjectViewer({ project: initialProject, renderJob: initialRende
               </div>
             </Card>
           ) : project.status === "rendering" && renderJob ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                  Rendering in progress
-                </CardTitle>
-                <CardDescription>
-                  Your video is being rendered. This may take a few minutes.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span>Progress</span>
-                    <span>{Math.round(renderJob.progress || 0)}%</span>
-                  </div>
-                  <Progress value={renderJob.progress || 0} />
-                </div>
-
-                {renderJob.logs && renderJob.logs.length > 0 && (
-                  <div className="space-y-2">
-                    <span className="text-sm font-medium">Logs</span>
-                    <ScrollArea className="h-32 rounded border border-border bg-muted/50 p-2">
-                      <pre className="text-xs font-mono text-muted-foreground">
-                        {renderJob.logs.slice(-20).join("\n")}
-                      </pre>
-                    </ScrollArea>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <RenderProgress 
+              progress={renderJob.progress || 0} 
+              currentStage={Array.isArray(renderJob.logs) && renderJob.logs.length > 0 ? String(renderJob.logs[renderJob.logs.length - 1]) : undefined}
+            />
           ) : project.status === "failed" ? (
             <Card className="border-destructive/50">
               <CardHeader>
