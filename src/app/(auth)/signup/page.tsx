@@ -11,7 +11,6 @@ import {
   Check,
   Upload,
   Building2,
-  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -71,7 +70,7 @@ const videoQualities = [
   { value: "4k", label: "4K Ultra HD", description: "Maximum quality" },
 ];
 
-const TOTAL_STEPS = 6;
+const TOTAL_STEPS = 5;
 
 interface FormData {
   firstName: string;
@@ -88,7 +87,6 @@ interface FormData {
   businessSize: string;
   defaultVideoQuality: string;
   referralSource: string;
-  creditsAmount: number;
 }
 
 export default function SignUpPage() {
@@ -116,7 +114,6 @@ export default function SignUpPage() {
     businessSize: "",
     defaultVideoQuality: "1080p",
     referralSource: "",
-    creditsAmount: 0, // 0 = free tier
   });
 
   // Resend cooldown timer
@@ -127,7 +124,7 @@ export default function SignUpPage() {
     }
   }, [resendCooldown]);
 
-  const updateFormData = (field: keyof FormData, value: string | number) => {
+  const updateFormData = (field: keyof FormData, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
@@ -271,74 +268,24 @@ export default function SignUpPage() {
         business_size: skipBusiness ? "no_business" : formData.businessSize || null,
         default_video_quality: formData.defaultVideoQuality,
         referral_source: formData.referralSource || null,
-        credits: formData.creditsAmount === 0 ? 1 : formData.creditsAmount,
-        onboarding_completed: false,
+        credits: 1, // Free tier starts with 1 credit
+        onboarding_completed: step === 5,
       });
 
       if (error) throw error;
 
-      setStep(step + 1);
+      if (step === 5) {
+        // Complete onboarding
+        toast.success("Welcome to AI Videographer!");
+        router.push("/app");
+        router.refresh();
+        } else {
+        setStep(step + 1);
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to save profile");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handlePurchaseCredits = async () => {
-    if (formData.creditsAmount === 0) {
-      // Free tier - just complete onboarding
-      await completeOnboarding();
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const res = await fetch("/api/stripe/create-checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          credits: formData.creditsAmount,
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to create checkout session");
-      }
-
-      const { url } = await res.json();
-      
-      // Save that we're in checkout flow
-      localStorage.setItem("checkout_pending", "true");
-      
-      // Redirect to Stripe
-      window.location.href = url;
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Payment failed");
-      setLoading(false);
-    }
-  };
-
-  const completeOnboarding = async () => {
-    setLoading(true);
-    try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-
-      if (user) {
-        await supabase
-          .from("user_profiles")
-          .update({ onboarding_completed: true })
-          .eq("id", user.id);
-      }
-
-      toast.success("Welcome to AI Videographer!");
-      router.push("/app");
-      router.refresh();
-    } catch (error) {
-      console.error("Error completing onboarding:", error);
-      router.push("/app");
     }
   };
 
@@ -354,8 +301,6 @@ export default function SignUpPage() {
         return true; // Can skip
       case 5:
         return formData.defaultVideoQuality;
-      case 6:
-        return true;
       default:
         return false;
     }
@@ -367,13 +312,8 @@ export default function SignUpPage() {
       if (formData.email) setStep(2);
     } else if (step === 3) {
       await handleCreateAccount();
-    } else if (step === 4) {
+    } else if (step === 4 || step === 5) {
       await handleSaveProfile(false);
-    } else if (step === 5) {
-      await handleSaveProfile(false);
-      setStep(6);
-    } else if (step === 6) {
-      await handlePurchaseCredits();
     } else {
       setStep(step + 1);
     }
@@ -384,9 +324,9 @@ export default function SignUpPage() {
   };
 
   return (
-    <div className="min-h-screen flex">
+    <div className="min-h-screen flex overflow-hidden">
       {/* Left Panel - Branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-[#2A2F38] text-white flex-col justify-between p-12">
+      <div className="hidden lg:flex lg:w-1/2 bg-[#2A2F38] text-white flex-col justify-between p-12 overflow-y-auto">
         <div>
           <Link href="/" className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[#00f0ff] flex items-center justify-center">
@@ -404,7 +344,7 @@ export default function SignUpPage() {
 
           {/* Progress Steps */}
           <div className="flex items-center gap-2">
-            {[1, 2, 3, 4, 5, 6].map((s) => (
+            {[1, 2, 3, 4, 5].map((s) => (
               <div key={s} className="flex items-center">
                 <div
                   className={cn(
@@ -418,7 +358,7 @@ export default function SignUpPage() {
                 >
                   {s < step ? <Check className="w-4 h-4" /> : s}
                 </div>
-                {s < 6 && (
+                {s < 5 && (
                   <div
                     className={cn(
                       "w-8 h-0.5 mx-1",
@@ -437,7 +377,7 @@ export default function SignUpPage() {
       </div>
 
       {/* Right Panel - Form */}
-      <div className="flex-1 flex items-center justify-center p-8 bg-white">
+      <div className="flex-1 flex items-center justify-center p-8 bg-white overflow-y-auto">
         <div className="w-full max-w-md">
           {/* Mobile Logo */}
           <div className="lg:hidden mb-8">
@@ -459,7 +399,6 @@ export default function SignUpPage() {
               {step === 3 && "Create your password"}
               {step === 4 && "Tell us about your business"}
               {step === 5 && "Set your preferences"}
-              {step === 6 && "Get credits"}
             </h2>
           </div>
 
@@ -511,7 +450,7 @@ export default function SignUpPage() {
                         {formData.phoneCountryCode}
                       </SelectValue>
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="max-h-[200px] overflow-y-auto">
                       {countryCodes.map((country) => (
                         <SelectItem key={country.code} value={country.code}>
                           <span className="flex items-center gap-2">
@@ -540,7 +479,7 @@ export default function SignUpPage() {
           {step === 2 && (
             <div className="space-y-6">
               <p className="text-[#36454f]">
-                We've sent a 6-digit verification code to{" "}
+                We&apos;ve sent a 6-digit verification code to{" "}
                 <span className="font-medium text-[#2A2F38]">{formData.email}</span>
               </p>
 
@@ -570,7 +509,7 @@ export default function SignUpPage() {
 
               <div className="text-center">
                 <p className="text-sm text-[#36454f]">
-                  Didn't receive the code?{" "}
+                  Didn&apos;t receive the code?{" "}
                   {resendCooldown > 0 ? (
                     <span className="text-gray-400">Resend in {resendCooldown}s</span>
                   ) : (
@@ -672,7 +611,7 @@ export default function SignUpPage() {
                   <SelectTrigger>
                     <SelectValue placeholder="Select size" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="max-h-[200px] overflow-y-auto">
                     {businessSizes.map((size) => (
                       <SelectItem key={size.value} value={size.value}>
                         {size.label}
@@ -686,7 +625,7 @@ export default function SignUpPage() {
                 onClick={() => handleSaveProfile(true)}
                 className="text-sm text-[#36454f] hover:text-[#2A2F38] underline"
               >
-                I don't have a business, skip this step
+                I don&apos;t have a business, skip this step
               </button>
             </div>
           )}
@@ -747,7 +686,7 @@ export default function SignUpPage() {
                   <SelectTrigger>
                     <SelectValue placeholder="Select an option" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="max-h-[200px] overflow-y-auto">
                     {referralSources.map((source) => (
                       <SelectItem key={source.value} value={source.value}>
                         {source.label}
@@ -755,67 +694,6 @@ export default function SignUpPage() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-            </div>
-          )}
-
-          {/* Step 6: Credits */}
-          {step === 6 && (
-            <div className="space-y-6">
-              <div className="p-4 rounded-lg bg-gradient-to-r from-[#00f0ff]/10 to-[#00f0ff]/5 border border-[#00f0ff]/20">
-                <div className="flex items-center gap-3 mb-2">
-                  <Sparkles className="w-5 h-5 text-[#00f0ff]" />
-                  <p className="font-medium text-[#2A2F38]">Free starter credit</p>
-                </div>
-                <p className="text-sm text-[#36454f]">
-                  You'll receive 1 free credit to get started. Each credit allows you to create one video.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Buy additional credits</Label>
-                <p className="text-sm text-[#36454f] mb-3">
-                  $2 AUD per credit. Enter how many credits you'd like to purchase.
-                </p>
-
-                <div className="flex items-center gap-4">
-                  <Input
-                    type="number"
-                    min={0}
-                    value={formData.creditsAmount}
-                    onChange={(e) => updateFormData("creditsAmount", parseInt(e.target.value) || 0)}
-                    className="w-24"
-                  />
-                  <span className="text-[#36454f]">credits</span>
-                  {formData.creditsAmount > 0 && (
-                    <span className="font-medium text-[#2A2F38]">
-                      = ${(formData.creditsAmount * 2).toFixed(2)} AUD
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <div className="p-4 rounded-lg border border-gray-200 bg-gray-50">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[#36454f]">Free credit</span>
-                  <span className="font-medium">1</span>
-                </div>
-                {formData.creditsAmount > 0 && (
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[#36454f]">Additional credits</span>
-                    <span className="font-medium">{formData.creditsAmount}</span>
-                  </div>
-                )}
-                <div className="border-t pt-2 mt-2 flex items-center justify-between">
-                  <span className="font-medium text-[#2A2F38]">Total credits</span>
-                  <span className="font-bold text-lg">{1 + formData.creditsAmount}</span>
-                </div>
-                {formData.creditsAmount > 0 && (
-                  <div className="flex items-center justify-between text-[#00f0ff] mt-1">
-                    <span>Payment due</span>
-                    <span className="font-medium">${(formData.creditsAmount * 2).toFixed(2)} AUD</span>
-                  </div>
-                )}
               </div>
             </div>
           )}
@@ -835,11 +713,7 @@ export default function SignUpPage() {
                 className="flex-1 bg-[#00f0ff] hover:bg-[#00f0ff]/90 text-[#2A2F38] font-semibold"
               >
                 {loading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-                {step === 6
-                  ? formData.creditsAmount > 0
-                    ? "Purchase & Continue"
-                    : "Start with Free Tier"
-                  : "Continue"}
+                {step === 5 ? "Complete Setup" : "Continue"}
                 <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
             </div>
