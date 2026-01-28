@@ -179,26 +179,36 @@ export interface CreateTaskResponse {
 /**
  * Create a video indexing task from a URL
  * The video will be downloaded and processed by TwelveLabs
+ * Note: TwelveLabs requires multipart/form-data for this endpoint
  */
 export async function createIndexingTaskFromUrl(
   videoUrl: string,
   indexId: string,
   options: {
     language?: string;
-    disableVideoStream?: boolean;
   } = {}
 ): Promise<CreateTaskResponse> {
-  const response = await twelveLabsFetch("/tasks", {
+  const { apiKey } = getConfig();
+  
+  // TwelveLabs requires multipart/form-data for task creation
+  const formData = new FormData();
+  formData.append("index_id", indexId);
+  formData.append("url", videoUrl);
+  formData.append("language", options.language || "en");
+  
+  const url = `${TWELVELABS_API_BASE}/tasks`;
+  console.log(`TwelveLabs API Request: POST ${url}`);
+  
+  const response = await fetch(url, {
     method: "POST",
-    body: JSON.stringify({
-      index_id: indexId,
-      url: videoUrl,
-      language: options.language || "en",
-      disable_video_stream: options.disableVideoStream || false,
-    }),
+    headers: {
+      "x-api-key": apiKey,
+      // Don't set Content-Type - fetch will set it with the correct boundary for FormData
+    },
+    body: formData,
   });
 
-  const data = await safeParseJson(response);
+  const data = await safeParseJson(Object.assign(response, { endpoint: "/tasks" }));
 
   if (!response.ok) {
     throw new Error(`Failed to create indexing task: ${JSON.stringify(data)}`);
