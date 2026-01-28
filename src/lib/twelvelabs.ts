@@ -87,22 +87,17 @@ export interface TwelveLabsIndex {
 
 /**
  * Create a new index for video storage
- * Updated for TwelveLabs API v1.3 which uses 'models' instead of 'engines'
+ * Updated for TwelveLabs API v1.3 which uses 'model_name' parameter
  */
 export async function createIndex(
   name: string,
-  models: Array<{
-    name: string;
-    options?: string[];
-  }> = [
-    { name: "marengo2.7", options: ["visual", "audio"] },
-  ]
+  modelName: string = "marengo2.7"
 ): Promise<TwelveLabsIndex> {
   const response = await twelveLabsFetch("/indexes", {
     method: "POST",
     body: JSON.stringify({
       index_name: name,
-      models,
+      model_name: modelName,
     }),
   });
 
