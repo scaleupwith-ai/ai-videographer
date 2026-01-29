@@ -154,10 +154,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
       },
     });
 
-    // If this job was triggered from an asset, update the asset's metadata with the AI description
+    // If this job was triggered from an asset, update the asset's metadata
     const assetId = job.metadata?.asset_id;
-    if (assetId && analysis.summary) {
-      console.log(`Job ${jobId}: Updating asset ${assetId} with AI-generated description`);
+    if (assetId) {
+      console.log(`Job ${jobId}: Updating asset ${assetId} with analysis results`);
       
       // Fetch current asset metadata
       const { data: asset } = await adminClient
@@ -169,16 +169,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
       // Merge AI results into asset metadata
       const updatedMetadata = {
         ...(asset?.metadata || {}),
-        description: analysis.summary,
+        description: analysis.summary || "Video analysis completed",
         aiGenerated: true,
         analyzedAt: new Date().toISOString(),
         videoJobId: jobId,
-        chapters: analysis.chapters,
-        highlights: analysis.highlights,
+        chapters: analysis.chapters || [],
+        highlights: analysis.highlights || [],
       };
 
-      // Update the asset
-      await adminClient
+      // Update the asset - always mark as ready
+      const { error: updateError } = await adminClient
         .from("media_assets")
         .update({ 
           status: 'ready',
@@ -186,7 +186,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
         })
         .eq("id", assetId);
       
-      console.log(`Job ${jobId}: Asset ${assetId} updated with AI description`);
+      if (updateError) {
+        console.error(`Job ${jobId}: Failed to update asset ${assetId}:`, updateError);
+      } else {
+        console.log(`Job ${jobId}: Asset ${assetId} updated successfully`);
+      }
     }
 
     console.log(`Job ${jobId}: Processing complete`);

@@ -307,6 +307,7 @@ export async function analyzeVideo(
   const body = {
     video_id: videoId,
     prompt,
+    stream: false, // Request non-streaming response for simpler parsing
   };
 
   const url = `${TWELVELABS_API_BASE}/analyze`;
@@ -323,61 +324,79 @@ export async function analyzeVideo(
 
   if (!response.ok) {
     const text = await response.text();
+    console.error(`TwelveLabs analyze failed: ${response.status}`, text.substring(0, 500));
     throw new Error(`Failed to analyze video: ${response.status} - ${text.substring(0, 500)}`);
   }
 
-  // Handle streaming response - collect all chunks
-  const reader = response.body?.getReader();
-  if (!reader) {
-    throw new Error("No response body from analyze endpoint");
-  }
-
-  let result = "";
-  const decoder = new TextDecoder();
+  // Try to get response as text first
+  const responseText = await response.text();
+  console.log(`TwelveLabs analyze raw response (first 500 chars):`, responseText.substring(0, 500));
   
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    
-    const chunk = decoder.decode(value, { stream: true });
-    // Parse SSE events if present
-    const lines = chunk.split("\n");
-    for (const line of lines) {
-      if (line.startsWith("data:")) {
-        try {
-          const data = JSON.parse(line.slice(5).trim());
-          if (data.text) {
-            result += data.text;
-          }
-        } catch {
-          // Raw text, not JSON
-          result += line.slice(5).trim();
+  // Try to parse as JSON first
+  try {
+    const jsonData = JSON.parse(responseText);
+    // Check various possible response formats
+    if (jsonData.data) {
+      return jsonData.data;
+    }
+    if (jsonData.text) {
+      return jsonData.text;
+    }
+    if (jsonData.response) {
+      return jsonData.response;
+    }
+    if (typeof jsonData === "string") {
+      return jsonData;
+    }
+    // Return stringified JSON if no known format
+    console.log(`TwelveLabs response format unknown:`, JSON.stringify(jsonData).substring(0, 200));
+    return JSON.stringify(jsonData);
+  } catch {
+    // Not JSON, might be streaming SSE format
+  }
+  
+  // Parse SSE streaming format
+  let result = "";
+  const lines = responseText.split("\n");
+  for (const line of lines) {
+    if (line.startsWith("data:")) {
+      const dataContent = line.slice(5).trim();
+      if (dataContent === "[DONE]") continue;
+      
+      try {
+        const data = JSON.parse(dataContent);
+        if (data.text) {
+          result += data.text;
+        } else if (data.data) {
+          result += data.data;
+        } else if (typeof data === "string") {
+          result += data;
         }
-      } else if (line.trim() && !line.startsWith("event:")) {
-        // Direct text response
-        try {
-          const data = JSON.parse(line);
-          if (data.data) {
-            result += data.data;
-          }
-        } catch {
-          result += line;
-        }
+      } catch {
+        // Raw text after "data:", not JSON
+        result += dataContent;
       }
     }
   }
-
-  return result.trim();
+  
+  if (result) {
+    return result.trim();
+  }
+  
+  // Fallback: return raw response text
+  return responseText.trim();
 }
 
 /**
  * Generate a summary of an indexed video using the /analyze endpoint
  */
 export async function generateSummary(videoId: string): Promise<string> {
-  return analyzeVideo(
+  const summary = await analyzeVideo(
     videoId,
     "Provide a comprehensive summary of this video. Include the main subjects, their actions, the setting, atmosphere, and any important visual or audio elements. Be descriptive but concise."
   );
+  console.log(`[TwelveLabs] Generated summary (${summary.length} chars):`, summary.substring(0, 200));
+  return summary;
 }
 
 /**
