@@ -255,8 +255,18 @@ export async function POST(request: NextRequest) {
 
     if (!elevenLabsResponse.ok) {
       const error = await elevenLabsResponse.text();
-      console.error("ElevenLabs error:", error);
-      throw new Error("Failed to generate voiceover");
+      console.error("ElevenLabs error:", elevenLabsResponse.status, error);
+      
+      // Provide more specific error messages
+      if (elevenLabsResponse.status === 401) {
+        throw new Error("ElevenLabs API key is invalid. Please check your ELEVENLABS_API_KEY.");
+      } else if (elevenLabsResponse.status === 422) {
+        throw new Error("Invalid voice ID or script. Please try a different voice.");
+      } else if (elevenLabsResponse.status === 429) {
+        throw new Error("ElevenLabs rate limit exceeded. Please try again later.");
+      } else {
+        throw new Error(`Failed to generate voiceover: ${error.slice(0, 100)}`);
+      }
     }
 
     const audioBuffer = Buffer.from(await elevenLabsResponse.arrayBuffer());
