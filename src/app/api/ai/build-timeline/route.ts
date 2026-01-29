@@ -399,6 +399,7 @@ export async function POST(request: NextRequest) {
       console.log(`[Build Timeline] TALKING HEAD MODE`);
       console.log(`[Build Timeline] Asset: ${talkingHeadAssetId}, Duration: ${talkingHeadDuration}s`);
       console.log(`[Build Timeline] B-roll frequency: ${brollFrequency}, length: ${brollLength}s`);
+      console.log(`[Build Timeline] Music selected: ${selectedMusicId || "none"}, volume: ${musicVolume}`);
       
       // Fetch the talking head asset
       const { data: talkingHeadAsset, error: thError } = await adminSupabase
@@ -406,6 +407,20 @@ export async function POST(request: NextRequest) {
         .select("*")
         .eq("id", talkingHeadAssetId)
         .single();
+      
+      // Fetch music if selected for talking head
+      let talkingHeadMusic: { id: string; audio_url: string; title: string } | null = null;
+      if (selectedMusicId) {
+        const { data: musicData } = await adminSupabase
+          .from("music")
+          .select("id, audio_url, title")
+          .eq("id", selectedMusicId)
+          .single();
+        if (musicData) {
+          talkingHeadMusic = musicData;
+          console.log(`[Build Timeline] Using music: "${musicData.title}" (${musicData.audio_url ? "has URL" : "NO URL!"})`);
+        }
+      }
         
       if (thError || !talkingHeadAsset) {
         return NextResponse.json({ error: "Talking head asset not found" }, { status: 404 });
@@ -658,7 +673,13 @@ RESPOND WITH ONLY THIS JSON:
         soundEffects: [],
         imageOverlays: [],
         global: {
-          music: { assetId: null, audioUrl: null, title: null, volume: 0.2 },
+          // Use selected music if provided
+          music: { 
+            assetId: talkingHeadMusic?.id || null, 
+            audioUrl: talkingHeadMusic?.audio_url || null, 
+            title: talkingHeadMusic?.title || null, 
+            volume: musicVolume ?? 0.2,
+          },
           // Use talking head video as the audio source
           voiceover: { 
             assetId: talkingHeadAsset.id, 

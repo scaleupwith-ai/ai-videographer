@@ -37,6 +37,42 @@ const DEFAULT_CONFIG: EffectConfig = {
   textFont: "Bebas Neue",
 };
 
+// Separate component for FFmpeg code preview to avoid hydration issues
+function FFmpegPreview({ config, totalDuration }: { config: EffectConfig; totalDuration: number }) {
+  const boxWidthPercent = config.boxWidth / 100;
+  const slideIn = config.slideInDuration;
+  const holdEnd = slideIn + config.holdDuration;
+  const slideOut = config.slideOutDuration;
+  
+  const boxColorHex = config.boxColor.replace('#', '0x');
+  const textColorHex = config.textColor.replace('#', '0x');
+  
+  const xExprRight = `if(lt(t,${slideIn}),W-W*${boxWidthPercent}*(t/${slideIn}),if(gt(t,${holdEnd}),W-W*${boxWidthPercent}*(1-(t-${holdEnd})/${slideOut}),W-W*${boxWidthPercent}))`;
+  const xExprLeft = `if(lt(t,${slideIn}),-W*${boxWidthPercent}+W*${boxWidthPercent}*(t/${slideIn}),if(gt(t,${holdEnd}),W*${boxWidthPercent}*(1-(t-${holdEnd})/${slideOut})-W*${boxWidthPercent},0))`;
+  const xExpr = config.slideDirection === "right" ? xExprRight : xExprLeft;
+  
+  const textX = config.slideDirection === "right" 
+    ? `W-W*${boxWidthPercent}/2-text_w/2` 
+    : `W*${boxWidthPercent}/2-text_w/2`;
+
+  const code = `# Slide-in from ${config.slideDirection}
+# Duration: ${totalDuration.toFixed(1)}s (in: ${slideIn}s, hold: ${config.holdDuration}s, out: ${slideOut}s)
+
+# 1. Create colored box that slides in
+drawbox=x='${xExpr}':y=0:w=W*${boxWidthPercent}:h=H:color=${boxColorHex}:t=fill
+
+# 2. Add text on top
+drawtext=text='${config.text}':fontsize=${config.fontSize}:fontcolor=${textColorHex}:fontfile=...
+:x=${textX}:y=(H-text_h)/2
+:enable='between(t,${slideIn},${holdEnd})'`;
+
+  return (
+    <pre className="bg-slate-900 text-green-400 p-4 rounded-lg overflow-x-auto text-sm whitespace-pre-wrap">
+      {code}
+    </pre>
+  );
+}
+
 export default function EffectsTestPage() {
   const [config, setConfig] = useState<EffectConfig>(DEFAULT_CONFIG);
   const [isRendering, setIsRendering] = useState(false);
@@ -352,21 +388,7 @@ export default function EffectsTestPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <pre className="bg-slate-900 text-green-400 p-4 rounded-lg overflow-x-auto text-sm">
-{`# Slide-in from ${config.slideDirection}
-# Duration: ${totalDuration}s (in: ${config.slideInDuration}s, hold: ${config.holdDuration}s, out: ${config.slideOutDuration}s)
-
-# 1. Create colored box that slides in
-drawbox=x='${config.slideDirection === "right" 
-  ? `if(lt(t,${config.slideInDuration}),W-W*${config.boxWidth/100}*(t/${config.slideInDuration}),if(gt(t,${config.slideInDuration + config.holdDuration}),W-W*${config.boxWidth/100}*(1-(t-${config.slideInDuration + config.holdDuration})/${config.slideOutDuration}),W-W*${config.boxWidth/100}))`
-  : `if(lt(t,${config.slideInDuration}),-W*${config.boxWidth/100}+W*${config.boxWidth/100}*(t/${config.slideInDuration}),if(gt(t,${config.slideInDuration + config.holdDuration}),W*${config.boxWidth/100}*(1-(t-${config.slideInDuration + config.holdDuration})/${config.slideOutDuration})-W*${config.boxWidth/100},0))`
-}':y=0:w=W*${config.boxWidth/100}:h=H:color=${config.boxColor.replace('#', '0x')}:t=fill
-
-# 2. Add text on top
-drawtext=text='${config.text}':fontsize=${config.fontSize}:fontcolor=${config.textColor.replace('#', '0x')}:fontfile=...
-:x=${config.slideDirection === "right" ? `W-W*${config.boxWidth/100}/2-text_w/2` : `W*${config.boxWidth/100}/2-text_w/2`}:y=(H-text_h)/2
-:enable='between(t,${config.slideInDuration},${config.slideInDuration + config.holdDuration})'`}
-              </pre>
+              <FFmpegPreview config={config} totalDuration={totalDuration} />
             </CardContent>
           </Card>
         </div>

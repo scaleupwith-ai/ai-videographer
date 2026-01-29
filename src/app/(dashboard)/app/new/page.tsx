@@ -349,6 +349,9 @@ export default function NewVideoPage() {
       if (videoType === "talking-head" && talkingHeadAsset) {
         setGenerationStatus("Step 1/3: AI is analyzing your video and selecting b-roll...");
         
+        // Map volume label to actual value for talking head music
+        const volumeMap = { faint: 0.1, low: 0.2, medium: 0.3, loud: 0.5 };
+        
         // For talking head, we use their video as the base and add b-roll overlays
         const timelineRes = await fetch("/api/ai/build-timeline", {
           method: "POST",
@@ -363,6 +366,9 @@ export default function NewVideoPage() {
             brollLength: brollLength,
             enableCaptions: talkingHeadCaptions,
             resolution: { width: 1920, height: 1080 },
+            // Include music selection for talking head
+            selectedMusicId: selectedMusicId || undefined,
+            musicVolume: selectedMusicId ? volumeMap[musicVolume] : undefined,
           }),
         });
 
@@ -876,6 +882,93 @@ export default function NewVideoPage() {
                     )} />
                   </button>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Background Music */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Music className="w-5 h-5 text-primary" />
+                  Background Music (Optional)
+                </CardTitle>
+                <CardDescription>
+                  Add subtle background music to your video
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {musicTracks.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No music tracks available</p>
+                ) : (
+                  <>
+                    <div className="max-h-48 overflow-y-auto space-y-2">
+                      <button
+                        onClick={() => setSelectedMusicId("")}
+                        className={cn(
+                          "w-full p-3 rounded-lg border cursor-pointer transition-all flex items-center gap-3 text-left",
+                          !selectedMusicId ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+                        )}
+                      >
+                        <div className="w-10 h-10 rounded bg-muted flex items-center justify-center shrink-0">
+                          <MicOff className="w-5 h-5 text-muted-foreground" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium">No Music</p>
+                          <p className="text-sm text-muted-foreground">Only your voice</p>
+                        </div>
+                        {!selectedMusicId && (
+                          <Check className="w-5 h-5 text-primary shrink-0" />
+                        )}
+                      </button>
+                      {musicTracks.map((track) => (
+                        <button
+                          key={track.id}
+                          onClick={() => setSelectedMusicId(track.id)}
+                          className={cn(
+                            "w-full p-3 rounded-lg border cursor-pointer transition-all flex items-center gap-3 text-left",
+                            selectedMusicId === track.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+                          )}
+                        >
+                          <div className="w-10 h-10 rounded bg-purple-500/20 flex items-center justify-center shrink-0">
+                            <Music className="w-5 h-5 text-purple-500" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium truncate">{track.title}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {track.artist || "Unknown"} • {Math.round(track.duration_seconds)}s
+                            </p>
+                          </div>
+                          {selectedMusicId === track.id && (
+                            <Check className="w-5 h-5 text-primary shrink-0" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                    
+                    {/* Volume selector when music is selected */}
+                    {selectedMusicId && (
+                      <div className="pt-4 border-t">
+                        <Label className="mb-3 block">Music Volume</Label>
+                        <div className="grid grid-cols-4 gap-2">
+                          {(["faint", "low", "medium", "loud"] as const).map((vol) => (
+                            <button
+                              key={vol}
+                              onClick={() => setMusicVolume(vol)}
+                              className={cn(
+                                "px-3 py-2 rounded-lg text-sm capitalize transition-all",
+                                musicVolume === vol
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-muted hover:bg-muted/80"
+                              )}
+                            >
+                              {vol}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
               </CardContent>
             </Card>
 
