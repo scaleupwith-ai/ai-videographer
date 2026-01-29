@@ -308,15 +308,15 @@ export function executeAddEffect(
     });
   }
   
-  // Calculate minimum duration based on text length (2 seconds per word)
-  const SECONDS_PER_WORD = 2;
+  // Calculate minimum duration based on text length (0.4 seconds per word - fast but readable)
+  const SECONDS_PER_WORD = 0.4;
   let textWordCount = 0;
   if (params.header_text) textWordCount += params.header_text.split(/\s+/).length;
   if (params.body_text) textWordCount += params.body_text.split(/\s+/).length;
   if (params.top_text) textWordCount += params.top_text.split(/\s+/).length;
   if (params.bottom_text) textWordCount += params.bottom_text.split(/\s+/).length;
   
-  const minDuration = Math.max(3, textWordCount * SECONDS_PER_WORD); // At least 3 seconds
+  const minDuration = Math.max(2, textWordCount * SECONDS_PER_WORD); // At least 2 seconds
   
   const config = createEffectFromAI(
     params.effect_id,

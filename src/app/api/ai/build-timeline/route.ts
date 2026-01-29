@@ -175,10 +175,9 @@ Available effects:
 5. "corner-accents" - Decorative frame. No text fields.
 6. "border-glow" - Glowing border effect. No text fields.
 
-CRITICAL TIMING RULE:
-- Effects with text MUST be visible long enough to read
-- MINIMUM: 2 seconds per word (e.g., 4 words = 8 seconds minimum)
-- Add 1 second for slide-in animation
+TIMING:
+- Effects display for 0.4 seconds per word (minimum 2 seconds total)
+- Example: 5 words = 2 seconds (fast but readable)
 
 RULES:
 1. Add 0-3 text effects total (don't overdo it!)
@@ -1212,8 +1211,9 @@ Add text effects to enhance key moments in the video. Remember: 2 seconds per wo
       .filter((io: any) => io.imageUrl);
 
     // Build text effects from effects library with proper timing
-    const SECONDS_PER_WORD = 2;
-    const MIN_EFFECT_DURATION = 3;
+    // 0.4s per word is fast but readable for on-screen text
+    const SECONDS_PER_WORD = 0.4;
+    const MIN_EFFECT_DURATION = 2; // At least 2 seconds for any effect
     
     const textEffectsList = (textEffectResult.textEffects || []).map((te: any) => {
       // Calculate word count for timing
