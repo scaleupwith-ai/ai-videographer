@@ -117,18 +117,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // If generating description, trigger background processing
+    // If generating description, trigger background processing and return the job ID
+    let videoJobId: string | null = null;
     if (generateDescription && asset) {
-      // Fire and forget - don't wait for response
       const baseUrl = request.nextUrl.origin;
-      fetch(`${baseUrl}/api/assets/${asset.id}/analyze`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reference }),
-      }).catch(err => console.error('Background analysis trigger failed:', err));
+      try {
+        const analyzeRes = await fetch(`${baseUrl}/api/assets/${asset.id}/analyze`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reference }),
+        });
+        
+        if (analyzeRes.ok) {
+          const analyzeData = await analyzeRes.json();
+          videoJobId = analyzeData.videoJobId || null;
+        }
+      } catch (err) {
+        console.error('Background analysis trigger failed:', err);
+        // Don't fail the upload if analysis fails to start
+      }
     }
 
-    return NextResponse.json({ asset });
+    return NextResponse.json({ asset, videoJobId });
   } catch (error) {
     console.error("Error completing upload:", error);
     return NextResponse.json(
