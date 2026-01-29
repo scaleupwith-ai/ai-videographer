@@ -260,6 +260,8 @@ export async function POST(request: NextRequest) {
       // Provide more specific error messages
       if (elevenLabsResponse.status === 401) {
         throw new Error("ElevenLabs API key is invalid. Please check your ELEVENLABS_API_KEY.");
+      } else if (error.includes("voice_not_fine_tuned") || error.includes("voice_not_found")) {
+        throw new Error("This voice is not available. Please select a different voice.");
       } else if (elevenLabsResponse.status === 422) {
         throw new Error("Invalid voice ID or script. Please try a different voice.");
       } else if (elevenLabsResponse.status === 429) {
