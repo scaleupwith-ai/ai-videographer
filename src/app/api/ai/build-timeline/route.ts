@@ -163,6 +163,52 @@ RESPOND WITH ONLY THIS JSON FORMAT:
 If no overlays needed, set imageOverlays to empty array [].`;
 
 // ============================================================================
+// AGENT 4: TEXT EFFECT SELECTOR - Adds text effects from effects library
+// ============================================================================
+const TEXT_EFFECT_AGENT_PROMPT = `You are a TEXT EFFECT SELECTOR. Your job is to add text effects that enhance the video.
+
+Available effects:
+1. "lower-third-minimal" - For introducing speakers/topics. Fields: header (25 chars max), body (40 chars max)
+2. "slide-box-left" - For key points, agenda items. Fields: header (20 chars max), body (40 chars max)
+3. "slide-box-right" - For key points, callouts. Fields: header (20 chars max), body (40 chars max)
+4. "letterbox-with-text" - Cinematic bars with text. Fields: topText (50 chars), bottomText (50 chars)
+5. "corner-accents" - Decorative frame. No text fields.
+6. "border-glow" - Glowing border effect. No text fields.
+
+CRITICAL TIMING RULE:
+- Effects with text MUST be visible long enough to read
+- MINIMUM: 2 seconds per word (e.g., 4 words = 8 seconds minimum)
+- Add 1 second for slide-in animation
+
+RULES:
+1. Add 0-3 text effects total (don't overdo it!)
+2. Use lower-thirds when introducing topics or speakers
+3. Use slide-boxes for key points or chapter markers
+4. Use letterbox for cinematic moments or location text
+5. Don't place effects during important visual moments
+6. Space effects apart - don't stack them
+
+RESPOND WITH ONLY THIS JSON FORMAT:
+{
+  "textEffects": [
+    {
+      "effectId": "lower-third-minimal",
+      "atTimeSec": 5.0,
+      "header": "John Smith",
+      "body": "CEO & Founder"
+    },
+    {
+      "effectId": "slide-box-left",
+      "atTimeSec": 15.0,
+      "header": "KEY POINT",
+      "body": "Our main message here"
+    }
+  ]
+}
+
+If no effects needed, set textEffects to empty array [].`;
+
+// ============================================================================
 // Helper: Normalize scene durations to match target exactly
 // IMPORTANT: Must account for transition overlap - xfade removes transition duration from total
 // ============================================================================
@@ -1010,6 +1056,18 @@ Add overlays where they would enhance the video (or none if not needed).`;
     const overlayResult = await callAgent(OVERLAY_AGENT_PROMPT, overlayPrompt, "OVERLAY_AGENT");
 
     // ========================================================================
+    // AGENT 4: Text Effect Selection - Adds text overlays from effects library
+    // ========================================================================
+    const textEffectPrompt = `Video duration: ${voiceoverDurationSec} seconds
+
+Script:
+"${script}"
+
+Add text effects to enhance key moments in the video. Remember: 2 seconds per word minimum!`;
+
+    const textEffectResult = await callAgent(TEXT_EFFECT_AGENT_PROMPT, textEffectPrompt, "TEXT_EFFECT_AGENT");
+
+    // ========================================================================
     // COMBINE RESULTS: Build the final timeline
     // ========================================================================
     const clipMap = new Map(clips.map((c: any) => [c.id, c]));
@@ -1153,6 +1211,38 @@ Add overlays where they would enhance the video (or none if not needed).`;
       })
       .filter((io: any) => io.imageUrl);
 
+    // Build text effects from effects library with proper timing
+    const SECONDS_PER_WORD = 2;
+    const MIN_EFFECT_DURATION = 3;
+    
+    const textEffectsList = (textEffectResult.textEffects || []).map((te: any) => {
+      // Calculate word count for timing
+      let wordCount = 0;
+      if (te.header) wordCount += te.header.split(/\s+/).length;
+      if (te.body) wordCount += te.body.split(/\s+/).length;
+      if (te.topText) wordCount += te.topText.split(/\s+/).length;
+      if (te.bottomText) wordCount += te.bottomText.split(/\s+/).length;
+      
+      // Duration = max(minimum, words * 2s) + 1s for animation
+      const calculatedDuration = Math.max(MIN_EFFECT_DURATION, wordCount * SECONDS_PER_WORD) + 1;
+      
+      return {
+        effectId: te.effectId,
+        atTimeSec: te.atTimeSec,
+        durationSec: calculatedDuration,
+        header: te.header,
+        body: te.body,
+        topText: te.topText,
+        bottomText: te.bottomText,
+        wordCount,
+      };
+    });
+    
+    console.log(`[Build Timeline] Text effects: ${textEffectsList.length}`);
+    textEffectsList.forEach((te: any) => {
+      console.log(`  - ${te.effectId} at ${te.atTimeSec}s for ${te.durationSec}s (${te.wordCount} words)`);
+    });
+
     const projectId = uuid();
 
     // Build intro scene if applicable
@@ -1228,6 +1318,11 @@ Add overlays where they would enhance the video (or none if not needed).`;
         ...io,
         // Offset overlay timing by intro duration
         atTimeSec: io.atTimeSec + voiceoverStartOffset,
+      })),
+      textEffects: textEffectsList.map((te: any) => ({
+        ...te,
+        // Offset effect timing by intro duration
+        atTimeSec: te.atTimeSec + voiceoverStartOffset,
       })),
       global: {
         music: { 
@@ -1306,7 +1401,7 @@ Add overlays where they would enhance the video (or none if not needed).`;
       return NextResponse.json({ error: "Failed to create project" }, { status: 500 });
     }
 
-    console.log(`Project created with ${scenes.length} scenes, ${sfxList.length} SFX, ${overlayList.length} overlays`);
+    console.log(`Project created with ${scenes.length} scenes, ${sfxList.length} SFX, ${overlayList.length} overlays, ${textEffectsList.length} text effects`);
 
     return NextResponse.json({
       projectId: project.id,

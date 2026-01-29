@@ -398,6 +398,123 @@ export function buildFFmpegCommand(
     console.log("Captions not enabled or no segments to burn in");
   }
 
+  // Process text effects from effects library
+  const textEffects = timeline.textEffects || [];
+  if (textEffects.length > 0) {
+    console.log(`Processing ${textEffects.length} text effects`);
+    
+    for (let i = 0; i < textEffects.length; i++) {
+      const effect = textEffects[i];
+      const startTime = effect.atTimeSec;
+      const endTime = startTime + effect.durationSec;
+      const outputLabel = `teff${i}`;
+      
+      // Get brand colors (defaults if not set)
+      const primaryColor = "0x00f0ff"; // Electric blue
+      const textColor = "0xffffff";
+      
+      // Calculate positions
+      const boxHeight = Math.round(height * 0.15);
+      const fontSize = Math.round(height * 0.04);
+      const headerSize = Math.round(height * 0.05);
+      
+      let filterChain = "";
+      
+      switch (effect.effectId) {
+        case "lower-third-minimal": {
+          // Bottom-left text with underline
+          const y = height - Math.round(height * 0.2);
+          const header = escapeFFmpegText(effect.header || "");
+          const body = escapeFFmpegText(effect.body || "");
+          
+          filterChain = `drawbox=x=80:y=${y + 45}:w=300:h=4:color=${primaryColor}:t=fill:enable='between(t,${startTime},${endTime})',` +
+            `drawtext=text='${header}':fontsize=${headerSize}:fontcolor=${textColor}:x=80:y=${y}:enable='between(t,${startTime},${endTime})',` +
+            `drawtext=text='${body}':fontsize=${fontSize}:fontcolor=${textColor}@0.7:x=80:y=${y + 60}:enable='between(t,${startTime},${endTime})'`;
+          break;
+        }
+        case "slide-box-left": {
+          // Left half box with centered text
+          const boxW = Math.round(width * 0.5);
+          const header = escapeFFmpegText(effect.header || "");
+          const body = escapeFFmpegText(effect.body || "");
+          
+          filterChain = `drawbox=x=0:y=0:w=${boxW}:h=${height}:color=${primaryColor}:t=fill:enable='between(t,${startTime},${endTime})',` +
+            `drawtext=text='${header}':fontsize=${headerSize * 1.5}:fontcolor=0x000000:x=${boxW/2}-text_w/2:y=${height/2 - 60}:enable='between(t,${startTime},${endTime})',` +
+            `drawtext=text='${body}':fontsize=${fontSize}:fontcolor=0x000000@0.8:x=${boxW/2}-text_w/2:y=${height/2 + 20}:enable='between(t,${startTime},${endTime})'`;
+          break;
+        }
+        case "slide-box-right": {
+          // Right half box with centered text
+          const boxW = Math.round(width * 0.5);
+          const header = escapeFFmpegText(effect.header || "");
+          const body = escapeFFmpegText(effect.body || "");
+          
+          filterChain = `drawbox=x=${width - boxW}:y=0:w=${boxW}:h=${height}:color=${primaryColor}:t=fill:enable='between(t,${startTime},${endTime})',` +
+            `drawtext=text='${header}':fontsize=${headerSize * 1.5}:fontcolor=0x000000:x=${width - boxW/2}-text_w/2:y=${height/2 - 60}:enable='between(t,${startTime},${endTime})',` +
+            `drawtext=text='${body}':fontsize=${fontSize}:fontcolor=0x000000@0.8:x=${width - boxW/2}-text_w/2:y=${height/2 + 20}:enable='between(t,${startTime},${endTime})'`;
+          break;
+        }
+        case "letterbox-with-text": {
+          // Top and bottom bars with text
+          const barH = Math.round(height * 0.12);
+          const topText = escapeFFmpegText(effect.topText || "");
+          const bottomText = escapeFFmpegText(effect.bottomText || "");
+          
+          filterChain = `drawbox=x=0:y=0:w=${width}:h=${barH}:color=0x000000:t=fill:enable='between(t,${startTime},${endTime})',` +
+            `drawbox=x=0:y=${height - barH}:w=${width}:h=${barH}:color=0x000000:t=fill:enable='between(t,${startTime},${endTime})'`;
+          
+          if (topText) {
+            filterChain += `,drawtext=text='${topText}':fontsize=${fontSize}:fontcolor=${textColor}:x=(w-text_w)/2:y=${barH/2 - fontSize/2}:enable='between(t,${startTime},${endTime})'`;
+          }
+          if (bottomText) {
+            filterChain += `,drawtext=text='${bottomText}':fontsize=${fontSize}:fontcolor=${textColor}:x=(w-text_w)/2:y=${height - barH/2 - fontSize/2}:enable='between(t,${startTime},${endTime})'`;
+          }
+          break;
+        }
+        case "corner-accents": {
+          // L-shaped corners
+          const size = 60;
+          const m = 40;
+          const t = 4;
+          
+          filterChain = [
+            `drawbox=x=${m}:y=${m}:w=${size}:h=${t}:color=${primaryColor}:t=fill:enable='between(t,${startTime},${endTime})'`,
+            `drawbox=x=${m}:y=${m}:w=${t}:h=${size}:color=${primaryColor}:t=fill:enable='between(t,${startTime},${endTime})'`,
+            `drawbox=x=${width - m - size}:y=${m}:w=${size}:h=${t}:color=${primaryColor}:t=fill:enable='between(t,${startTime},${endTime})'`,
+            `drawbox=x=${width - m - t}:y=${m}:w=${t}:h=${size}:color=${primaryColor}:t=fill:enable='between(t,${startTime},${endTime})'`,
+            `drawbox=x=${m}:y=${height - m - t}:w=${size}:h=${t}:color=${primaryColor}:t=fill:enable='between(t,${startTime},${endTime})'`,
+            `drawbox=x=${m}:y=${height - m - size}:w=${t}:h=${size}:color=${primaryColor}:t=fill:enable='between(t,${startTime},${endTime})'`,
+            `drawbox=x=${width - m - size}:y=${height - m - t}:w=${size}:h=${t}:color=${primaryColor}:t=fill:enable='between(t,${startTime},${endTime})'`,
+            `drawbox=x=${width - m - t}:y=${height - m - size}:w=${t}:h=${size}:color=${primaryColor}:t=fill:enable='between(t,${startTime},${endTime})'`,
+          ].join(',');
+          break;
+        }
+        case "border-glow": {
+          // Glowing border
+          const bT = 4;
+          const bM = 20;
+          
+          filterChain = [
+            `drawbox=x=${bM}:y=${bM}:w=${width - 2*bM}:h=${bT}:color=${primaryColor}:t=fill:enable='between(t,${startTime},${endTime})'`,
+            `drawbox=x=${bM}:y=${height - bM - bT}:w=${width - 2*bM}:h=${bT}:color=${primaryColor}:t=fill:enable='between(t,${startTime},${endTime})'`,
+            `drawbox=x=${bM}:y=${bM}:w=${bT}:h=${height - 2*bM}:color=${primaryColor}:t=fill:enable='between(t,${startTime},${endTime})'`,
+            `drawbox=x=${width - bM - bT}:y=${bM}:w=${bT}:h=${height - 2*bM}:color=${primaryColor}:t=fill:enable='between(t,${startTime},${endTime})'`,
+          ].join(',');
+          break;
+        }
+        default:
+          console.warn(`Unknown text effect: ${effect.effectId}`);
+          continue;
+      }
+      
+      if (filterChain) {
+        filterParts.push(`[${finalVideoLabel}]${filterChain}[${outputLabel}]`);
+        finalVideoLabel = outputLabel;
+        console.log(`  Added ${effect.effectId} at ${startTime}s-${endTime}s`);
+      }
+    }
+  }
+
   // Audio mixing
   // Calculate total duration including intro offset
   const introOffset = globalSettings.voiceover.startOffset || 0;
