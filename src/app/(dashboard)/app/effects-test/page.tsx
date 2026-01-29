@@ -514,10 +514,18 @@ export default function EffectsTestPage() {
                           <Label>{prop.label}</Label>
                           
                           {prop.type === "text" && (
-                            <Input
-                              value={config[prop.key] as string || ""}
-                              onChange={(e) => setConfig({ ...config, [prop.key]: e.target.value })}
-                            />
+                            <div className="space-y-1">
+                              <Input
+                                value={config[prop.key] as string || ""}
+                                onChange={(e) => setConfig({ ...config, [prop.key]: e.target.value })}
+                                maxLength={prop.maxLength || 50}
+                              />
+                              {prop.maxLength && (
+                                <p className="text-xs text-muted-foreground text-right">
+                                  {(config[prop.key] as string || "").length}/{prop.maxLength}
+                                </p>
+                              )}
+                            </div>
                           )}
                           
                           {prop.type === "color" && (

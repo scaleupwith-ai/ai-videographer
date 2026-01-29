@@ -51,6 +51,7 @@ export interface EffectProperty {
   options?: { value: string; label: string }[];
   min?: number;
   max?: number;
+  maxLength?: number; // Character limit for text inputs
 }
 
 export interface EffectConfig {
@@ -95,8 +96,8 @@ export const EFFECT_TEMPLATES: EffectTemplate[] = [
     `,
     defaultTiming: { slideIn: 0.5, hold: 4, slideOut: 0.5 },
     properties: [
-      { key: "header", label: "Header Text", type: "text", default: "John Smith" },
-      { key: "body", label: "Body Text", type: "text", default: "CEO & Founder" },
+      { key: "header", label: "Header Text", type: "text", default: "John Smith", maxLength: 25 },
+      { key: "body", label: "Body Text", type: "text", default: "CEO & Founder", maxLength: 40 },
       { key: "boxColor", label: "Box Color", type: "color", default: "#00f0ff" },
       { key: "textColor", label: "Text Color", type: "color", default: "#ffffff" },
       { key: "slideFrom", label: "Slide From", type: "select", default: "left", options: [
@@ -141,8 +142,8 @@ export const EFFECT_TEMPLATES: EffectTemplate[] = [
     `,
     defaultTiming: { slideIn: 0.4, hold: 4, slideOut: 0.3 },
     properties: [
-      { key: "header", label: "Header", type: "text", default: "Featured Speaker" },
-      { key: "body", label: "Subtitle", type: "text", default: "Marketing Director" },
+      { key: "header", label: "Header", type: "text", default: "Featured Speaker", maxLength: 25 },
+      { key: "body", label: "Subtitle", type: "text", default: "Marketing Director", maxLength: 40 },
       { key: "lineColor", label: "Line Color", type: "color", default: "#ff7f50" },
       { key: "textColor", label: "Text Color", type: "color", default: "#ffffff" },
     ],
@@ -175,7 +176,7 @@ export const EFFECT_TEMPLATES: EffectTemplate[] = [
     `,
     defaultTiming: { slideIn: 0.3, hold: 5, slideOut: 0.3 },
     properties: [
-      { key: "text", label: "Text", type: "text", default: "LIVE" },
+      { key: "text", label: "Text", type: "text", default: "LIVE", maxLength: 12 },
       { key: "bgColor", label: "Background", type: "color", default: "#e63946" },
       { key: "textColor", label: "Text Color", type: "color", default: "#ffffff" },
     ],
@@ -206,7 +207,7 @@ export const EFFECT_TEMPLATES: EffectTemplate[] = [
     `,
     defaultTiming: { slideIn: 0.2, hold: 3, slideOut: 0.2 },
     properties: [
-      { key: "text", label: "Text", type: "text", default: "BREAKING NEWS" },
+      { key: "text", label: "Text", type: "text", default: "BREAKING NEWS", maxLength: 30 },
       { key: "textColor", label: "Color", type: "color", default: "#ffffff" },
       { key: "fontSize", label: "Font Size", type: "number", default: 72, min: 24, max: 200 },
     ],
@@ -231,7 +232,7 @@ export const EFFECT_TEMPLATES: EffectTemplate[] = [
     `,
     defaultTiming: { slideIn: 2, hold: 2, slideOut: 0.3 },
     properties: [
-      { key: "text", label: "Text", type: "text", default: "Loading complete..." },
+      { key: "text", label: "Text", type: "text", default: "Loading complete...", maxLength: 40 },
       { key: "textColor", label: "Color", type: "color", default: "#00ff00" },
     ],
     generateFilter: (config, { width, height }) => {
@@ -258,8 +259,8 @@ export const EFFECT_TEMPLATES: EffectTemplate[] = [
     `,
     defaultTiming: { slideIn: 0.5, hold: 5, slideOut: 0.5 },
     properties: [
-      { key: "header", label: "Header", type: "text", default: "AGENDA" },
-      { key: "body", label: "Body", type: "text", default: "What we will cover today" },
+      { key: "header", label: "Header", type: "text", default: "AGENDA", maxLength: 20 },
+      { key: "body", label: "Body", type: "text", default: "What we will cover today", maxLength: 40 },
       { key: "boxColor", label: "Box Color", type: "color", default: "#ff7f50" },
       { key: "textColor", label: "Text Color", type: "color", default: "#000000" },
       { key: "boxWidth", label: "Width %", type: "number", default: 50, min: 30, max: 70 },
@@ -326,7 +327,7 @@ export const EFFECT_TEMPLATES: EffectTemplate[] = [
     `,
     defaultTiming: { slideIn: 0.3, hold: 5, slideOut: 0.3 },
     properties: [
-      { key: "text", label: "Banner Text", type: "text", default: "🔴 LIVE BROADCAST" },
+      { key: "text", label: "Banner Text", type: "text", default: "🔴 LIVE BROADCAST", maxLength: 40 },
       { key: "bgColor", label: "Background", type: "color", default: "#e63946" },
       { key: "textColor", label: "Text Color", type: "color", default: "#ffffff" },
       { key: "height", label: "Height", type: "number", default: 80, min: 50, max: 150 },
@@ -357,7 +358,7 @@ export const EFFECT_TEMPLATES: EffectTemplate[] = [
     `,
     defaultTiming: { slideIn: 0.3, hold: 8, slideOut: 0.3 },
     properties: [
-      { key: "text", label: "Ticker Text", type: "text", default: "Breaking: Important news update • Stay tuned for more information • Subscribe for updates" },
+      { key: "text", label: "Ticker Text", type: "text", default: "Breaking: Important news update • Stay tuned for more information • Subscribe for updates", maxLength: 150 },
       { key: "bgColor", label: "Background", type: "color", default: "#1a1a2e" },
       { key: "textColor", label: "Text Color", type: "color", default: "#ffffff" },
     ],
@@ -392,7 +393,7 @@ export const EFFECT_TEMPLATES: EffectTemplate[] = [
     `,
     defaultTiming: { slideIn: 0.3, hold: 4, slideOut: 0.3 },
     properties: [
-      { key: "text", label: "Text", type: "text", default: "Look here!" },
+      { key: "text", label: "Text", type: "text", default: "Look here!", maxLength: 25 },
       { key: "color", label: "Color", type: "color", default: "#00f0ff" },
       { key: "posX", label: "X Position %", type: "number", default: 70, min: 20, max: 90 },
       { key: "posY", label: "Y Position %", type: "number", default: 40, min: 10, max: 80 },
@@ -519,7 +520,7 @@ export const EFFECT_TEMPLATES: EffectTemplate[] = [
     `,
     defaultTiming: { slideIn: 0.4, hold: 4, slideOut: 0.4 },
     properties: [
-      { key: "text", label: "Button Text", type: "text", default: "SUBSCRIBE" },
+      { key: "text", label: "Button Text", type: "text", default: "SUBSCRIBE", maxLength: 15 },
       { key: "bgColor", label: "Background", type: "color", default: "#ff0000" },
       { key: "textColor", label: "Text Color", type: "color", default: "#ffffff" },
     ],
@@ -554,7 +555,7 @@ export const EFFECT_TEMPLATES: EffectTemplate[] = [
     `,
     defaultTiming: { slideIn: 0.3, hold: 3, slideOut: 0.3 },
     properties: [
-      { key: "text", label: "Text", type: "text", default: "Don't forget to like!" },
+      { key: "text", label: "Text", type: "text", default: "Don't forget to like!", maxLength: 35 },
       { key: "textColor", label: "Text Color", type: "color", default: "#ffffff" },
     ],
     generateFilter: (config, { height }) => {
