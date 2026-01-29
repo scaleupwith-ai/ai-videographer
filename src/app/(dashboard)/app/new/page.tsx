@@ -6,7 +6,7 @@ import confetti from "canvas-confetti";
 import { 
   Mic, MicOff, FileText, Upload, Sparkles, Loader2, 
   ChevronRight, ChevronLeft, Check, Film, ArrowLeftRight,
-  Search, X, Play, RefreshCw, Music
+  Search, X, Play, RefreshCw, Music, UserSquare2, Volume2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -90,6 +90,7 @@ interface Clip {
 }
 
 type Step = 
+  | "video-type"
   | "voiceover" 
   | "script" 
   | "assets" 
@@ -97,14 +98,19 @@ type Step =
   | "generating" 
   | "timeline";
 
+type VideoType = "talking-head" | "voiceover" | null;
+
 export default function NewVideoPage() {
   const router = useRouter();
   
   // AI Mode - let AI decide everything
   const [aiMode, setAiMode] = useState<boolean>(false);
   
+  // Video type - talking head or voiceover video
+  const [videoType, setVideoType] = useState<VideoType>(null);
+  
   // Current step
-  const [step, setStep] = useState<Step>("voiceover");
+  const [step, setStep] = useState<Step>("video-type");
   
   // Step 1: Voiceover
   const [wantVoiceover, setWantVoiceover] = useState<boolean | null>(null);
@@ -242,6 +248,13 @@ export default function NewVideoPage() {
     }
     
     switch (step) {
+      case "video-type":
+        if (videoType === "talking-head") {
+          // Talking head always has voiceover
+          setWantVoiceover(true);
+        }
+        setStep("voiceover");
+        break;
       case "voiceover":
         setStep("script");
         break;
@@ -260,6 +273,9 @@ export default function NewVideoPage() {
 
   const goToPrevStep = () => {
     switch (step) {
+      case "voiceover":
+        setStep("video-type");
+        break;
       case "script":
         setStep("voiceover");
         break;
@@ -277,6 +293,8 @@ export default function NewVideoPage() {
 
   const canProceed = () => {
     switch (step) {
+      case "video-type":
+        return videoType !== null;
       case "voiceover":
         // In AI mode, just need description
         if (aiMode) return description.trim().length > 10;
@@ -502,6 +520,84 @@ export default function NewVideoPage() {
   // Render step content
   const renderStepContent = () => {
     switch (step) {
+      case "video-type":
+        return (
+          <div className="max-w-2xl mx-auto space-y-8">
+            <div className="text-center">
+              <h1 className="text-3xl font-bold mb-2 bg-gradient-to-r from-[#00f0ff] to-white bg-clip-text text-transparent">
+                What type of video?
+              </h1>
+              <p className="text-muted-foreground">Choose the style that best fits your content</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Talking Head Option */}
+              <button
+                onClick={() => setVideoType("talking-head")}
+                className={cn(
+                  "p-6 rounded-2xl border-2 transition-all text-left group hover:scale-[1.02]",
+                  videoType === "talking-head"
+                    ? "border-[#00f0ff] bg-[#00f0ff]/10 shadow-lg shadow-[#00f0ff]/20"
+                    : "border-[#36454f]/50 bg-[#2A2F38]/30 hover:border-[#00f0ff]/50"
+                )}
+              >
+                <div className={cn(
+                  "w-16 h-16 rounded-2xl flex items-center justify-center mb-4 transition-colors",
+                  videoType === "talking-head" 
+                    ? "bg-[#00f0ff]/20" 
+                    : "bg-[#36454f]/50 group-hover:bg-[#00f0ff]/10"
+                )}>
+                  <UserSquare2 className={cn(
+                    "w-8 h-8 transition-colors",
+                    videoType === "talking-head" ? "text-[#00f0ff]" : "text-muted-foreground"
+                  )} />
+                </div>
+                <h3 className="text-xl font-semibold mb-2">Talking Head</h3>
+                <p className="text-sm text-muted-foreground">
+                  Upload your own talking head footage. AI will sync your video with the script and add b-roll overlays.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Badge variant="outline" className="text-xs border-[#36454f]">Your Face</Badge>
+                  <Badge variant="outline" className="text-xs border-[#36454f]">B-Roll Overlays</Badge>
+                  <Badge variant="outline" className="text-xs border-[#36454f]">Lip Sync</Badge>
+                </div>
+              </button>
+
+              {/* Voiceover Option */}
+              <button
+                onClick={() => setVideoType("voiceover")}
+                className={cn(
+                  "p-6 rounded-2xl border-2 transition-all text-left group hover:scale-[1.02]",
+                  videoType === "voiceover"
+                    ? "border-[#00f0ff] bg-[#00f0ff]/10 shadow-lg shadow-[#00f0ff]/20"
+                    : "border-[#36454f]/50 bg-[#2A2F38]/30 hover:border-[#00f0ff]/50"
+                )}
+              >
+                <div className={cn(
+                  "w-16 h-16 rounded-2xl flex items-center justify-center mb-4 transition-colors",
+                  videoType === "voiceover" 
+                    ? "bg-[#00f0ff]/20" 
+                    : "bg-[#36454f]/50 group-hover:bg-[#00f0ff]/10"
+                )}>
+                  <Volume2 className={cn(
+                    "w-8 h-8 transition-colors",
+                    videoType === "voiceover" ? "text-[#00f0ff]" : "text-muted-foreground"
+                  )} />
+                </div>
+                <h3 className="text-xl font-semibold mb-2">Voiceover Video</h3>
+                <p className="text-sm text-muted-foreground">
+                  AI generates everything from your description - script, voiceover, b-roll footage, and music.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Badge variant="outline" className="text-xs border-[#36454f]">AI Voice</Badge>
+                  <Badge variant="outline" className="text-xs border-[#36454f]">Stock B-Roll</Badge>
+                  <Badge variant="outline" className="text-xs border-[#36454f]">Music</Badge>
+                </div>
+              </button>
+            </div>
+          </div>
+        );
+
       case "voiceover":
         return (
           <div className="max-w-2xl mx-auto space-y-8">
@@ -1309,22 +1405,24 @@ export default function NewVideoPage() {
     <div className="flex-1 flex flex-col min-h-0 bg-background">
       {/* Progress bar */}
       {step !== "generating" && step !== "timeline" && (
-        <div className="shrink-0 border-b bg-card">
+        <div className="shrink-0 border-b border-[#36454f]/30 bg-[#2A2F38]/50">
           <div className="max-w-4xl mx-auto px-6 py-4">
             <div className="flex items-center justify-between text-sm mb-2">
               <span className="text-muted-foreground">Step {
-                step === "voiceover" ? 1 :
-                step === "script" ? 2 :
-                step === "assets" ? 3 : 4
-              } of 4</span>
+                step === "video-type" ? 1 :
+                step === "voiceover" ? 2 :
+                step === "script" ? 3 :
+                step === "assets" ? 4 : 5
+              } of 5</span>
             </div>
-            <div className="h-2 bg-muted rounded-full overflow-hidden">
+            <div className="h-2 bg-[#36454f]/30 rounded-full overflow-hidden">
               <div 
-                className="h-full bg-primary transition-all"
+                className="h-full bg-[#00f0ff] transition-all"
                 style={{ 
-                  width: step === "voiceover" ? "25%" :
-                         step === "script" ? "50%" :
-                         step === "assets" ? "75%" : "100%"
+                  width: step === "video-type" ? "20%" :
+                         step === "voiceover" ? "40%" :
+                         step === "script" ? "60%" :
+                         step === "assets" ? "80%" : "100%"
                 }}
               />
             </div>
@@ -1347,12 +1445,13 @@ export default function NewVideoPage() {
 
       {/* Navigation */}
       {step !== "generating" && step !== "timeline" && (
-        <div className="shrink-0 border-t bg-card">
+        <div className="shrink-0 border-t border-[#36454f]/30 bg-[#2A2F38]/50">
           <div className="max-w-4xl mx-auto px-6 py-4 flex justify-between">
             <Button
               variant="outline"
               onClick={goToPrevStep}
-              disabled={step === "voiceover"}
+              disabled={step === "video-type"}
+              className="border-[#36454f] hover:bg-[#36454f]/30"
             >
               <ChevronLeft className="w-4 h-4 mr-1" />
               Back
@@ -1360,6 +1459,7 @@ export default function NewVideoPage() {
             <Button
               onClick={goToNextStep}
               disabled={!canProceed()}
+              className="bg-[#00f0ff] hover:bg-[#00f0ff]/90 text-[#36454f] font-semibold"
             >
               {step === "describe" || (aiMode && step === "voiceover") ? (
                 <>

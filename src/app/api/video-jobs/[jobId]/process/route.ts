@@ -146,6 +146,41 @@ export async function POST(request: NextRequest, context: RouteContext) {
       },
     });
 
+    // If this job was triggered from an asset, update the asset's metadata with the AI description
+    const assetId = job.metadata?.asset_id;
+    if (assetId && analysis.summary) {
+      console.log(`Job ${jobId}: Updating asset ${assetId} with AI-generated description`);
+      
+      // Fetch current asset metadata
+      const { data: asset } = await adminClient
+        .from("media_assets")
+        .select("metadata")
+        .eq("id", assetId)
+        .single();
+      
+      // Merge AI results into asset metadata
+      const updatedMetadata = {
+        ...(asset?.metadata || {}),
+        description: analysis.summary,
+        aiGenerated: true,
+        analyzedAt: new Date().toISOString(),
+        videoJobId: jobId,
+        chapters: analysis.chapters,
+        highlights: analysis.highlights,
+      };
+
+      // Update the asset
+      await adminClient
+        .from("media_assets")
+        .update({ 
+          status: 'ready',
+          metadata: updatedMetadata,
+        })
+        .eq("id", assetId);
+      
+      console.log(`Job ${jobId}: Asset ${assetId} updated with AI description`);
+    }
+
     console.log(`Job ${jobId}: Processing complete`);
     return NextResponse.json({ status: "done", videoId });
 

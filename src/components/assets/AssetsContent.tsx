@@ -65,6 +65,21 @@ interface AssetMetadata {
   scenes?: Array<{ start: number; end: number; description: string }>;
   analysisError?: string;
   analyzedAt?: string;
+  aiGenerated?: boolean;
+  videoJobId?: string;
+  chapters?: Array<{
+    chapter_number: number;
+    start: number;
+    end: number;
+    chapter_title: string;
+    chapter_summary: string;
+  }>;
+  highlights?: Array<{
+    start: number;
+    end: number;
+    highlight: string;
+    highlight_summary: string;
+  }>;
 }
 
 interface VideoJobResult {
@@ -1482,10 +1497,72 @@ export function AssetsContent({ initialAssets }: AssetsContentProps) {
                     {/* Description */}
                     {metadata.description && (
                       <div>
-                        <p className="text-sm font-medium mb-2">Description</p>
+                        <div className="flex items-center gap-2 mb-2">
+                          <p className="text-sm font-medium">Description</p>
+                          {metadata.aiGenerated && (
+                            <Badge variant="secondary" className="text-xs bg-[#00f0ff]/10 text-[#00f0ff] border-[#00f0ff]/30">
+                              <Sparkles className="w-3 h-3 mr-1" />
+                              AI Generated
+                            </Badge>
+                          )}
+                        </div>
                         <p className="text-sm text-muted-foreground leading-relaxed">
                           {metadata.description}
                         </p>
+                      </div>
+                    )}
+
+                    {/* AI Chapters - if available in metadata */}
+                    {metadata.chapters && metadata.chapters.length > 0 && (
+                      <div>
+                        <p className="text-sm font-medium mb-2">Chapters</p>
+                        <div className="space-y-2">
+                          {metadata.chapters.map((chapter, idx) => (
+                            <div
+                              key={idx}
+                              className="p-3 bg-[#2A2F38]/50 rounded-lg flex gap-3"
+                            >
+                              <Badge variant="outline" className="shrink-0 font-mono text-xs border-[#36454f]">
+                                {formatDuration(chapter.start)}
+                              </Badge>
+                              <div className="min-w-0">
+                                <p className="font-medium text-sm truncate">
+                                  {chapter.chapter_title}
+                                </p>
+                                <p className="text-xs text-muted-foreground line-clamp-2">
+                                  {chapter.chapter_summary}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* AI Highlights - if available in metadata */}
+                    {metadata.highlights && metadata.highlights.length > 0 && (
+                      <div>
+                        <p className="text-sm font-medium mb-2">Highlights</p>
+                        <div className="space-y-2">
+                          {metadata.highlights.map((highlight, idx) => (
+                            <div
+                              key={idx}
+                              className="p-3 bg-[#00f0ff]/5 rounded-lg flex gap-3 border border-[#00f0ff]/20"
+                            >
+                              <Badge variant="outline" className="shrink-0 font-mono text-xs border-[#00f0ff]/30 text-[#00f0ff]">
+                                {formatDuration(highlight.start)}
+                              </Badge>
+                              <div className="min-w-0">
+                                <p className="font-medium text-sm">
+                                  {highlight.highlight}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {highlight.highlight_summary}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
 
@@ -1503,13 +1580,13 @@ export function AssetsContent({ initialAssets }: AssetsContentProps) {
                       </div>
                     )}
 
-                    {/* AI Analysis Section - Only for videos */}
-                    {selectedAsset.kind === "video" && (
+                    {/* AI Analysis Section - Only for videos without AI description */}
+                    {selectedAsset.kind === "video" && !metadata.aiGenerated && (
                       <div className="border-t pt-6">
                         <div className="flex items-center justify-between mb-4">
                           <div>
                             <p className="font-medium flex items-center gap-2">
-                              <Sparkles className="w-4 h-4 text-primary" />
+                              <Sparkles className="w-4 h-4 text-[#00f0ff]" />
                               AI Video Analysis
                             </p>
                             <p className="text-xs text-muted-foreground">
@@ -1521,6 +1598,7 @@ export function AssetsContent({ initialAssets }: AssetsContentProps) {
                               onClick={startVideoAnalysis}
                               disabled={isAnalyzing}
                               size="sm"
+                              className="bg-[#00f0ff] hover:bg-[#00f0ff]/90 text-[#36454f] font-semibold"
                             >
                               {isAnalyzing ? (
                                 <>

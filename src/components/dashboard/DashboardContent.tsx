@@ -54,17 +54,17 @@ const statusConfig = {
   draft: {
     label: "Draft",
     icon: Clock,
-    className: "bg-muted text-muted-foreground",
+    className: "bg-[#2A2F38] text-[#8B9CAF]",
   },
   rendering: {
     label: "Rendering",
     icon: Loader2,
-    className: "bg-chart-1/20 text-chart-1",
+    className: "bg-[#00f0ff]/20 text-[#00f0ff]",
   },
   finished: {
     label: "Finished",
     icon: CheckCircle,
-    className: "bg-chart-2/20 text-chart-2",
+    className: "bg-emerald-500/20 text-emerald-400",
   },
   failed: {
     label: "Failed",
@@ -115,10 +115,10 @@ export function DashboardContent({ initialProjects }: DashboardContentProps) {
 
   if (projects.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center p-8">
+      <div className="flex-1 flex items-center justify-center p-8 bg-gradient-to-b from-[#36454f]/10 to-transparent">
         <div className="text-center max-w-md">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center mx-auto mb-6">
-            <Film className="w-10 h-10 text-primary" />
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#00f0ff]/20 to-[#36454f]/30 flex items-center justify-center mx-auto mb-6 border border-[#00f0ff]/20">
+            <Film className="w-10 h-10 text-[#00f0ff]" />
           </div>
           <h2 className="text-2xl font-semibold mb-2">Create your first video</h2>
           <p className="text-muted-foreground mb-6">
@@ -127,7 +127,7 @@ export function DashboardContent({ initialProjects }: DashboardContentProps) {
           <Button
             onClick={() => router.push("/app/new")}
             size="lg"
-            className="gap-2"
+            className="gap-2 bg-[#00f0ff] hover:bg-[#00f0ff]/90 text-[#36454f] font-semibold"
           >
             <Plus className="w-5 h-5" />
             Create New Video
@@ -138,9 +138,9 @@ export function DashboardContent({ initialProjects }: DashboardContentProps) {
   }
 
   return (
-    <div className="flex-1 min-h-0">
+    <div className="flex-1 min-h-0 bg-gradient-to-b from-[#36454f]/5 to-transparent">
       {/* Header */}
-      <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b border-border">
+      <header className="sticky top-0 z-10 bg-[#2A2F38]/80 backdrop-blur-sm border-b border-[#36454f]/30">
         <div className="flex items-center justify-between px-6 py-4">
           <div>
             <h1 className="text-2xl font-semibold">Projects</h1>
@@ -148,7 +148,10 @@ export function DashboardContent({ initialProjects }: DashboardContentProps) {
               {projects.length} project{projects.length !== 1 ? "s" : ""}
             </p>
           </div>
-          <Button onClick={() => router.push("/app/new")} className="gap-2">
+          <Button 
+            onClick={() => router.push("/app/new")} 
+            className="gap-2 bg-[#00f0ff] hover:bg-[#00f0ff]/90 text-[#36454f] font-semibold"
+          >
             <Plus className="w-4 h-4" />
             New Video
           </Button>
@@ -165,11 +168,11 @@ export function DashboardContent({ initialProjects }: DashboardContentProps) {
             return (
               <Card
                 key={project.id}
-                className="group hover:border-primary/50 transition-colors cursor-pointer"
+                className="group hover:border-[#00f0ff]/50 transition-colors cursor-pointer bg-[#2A2F38]/50 border-[#36454f]/30"
                 onClick={() => router.push(`/app/projects/${project.id}`)}
               >
                 {/* Thumbnail */}
-                <div className="aspect-video bg-muted relative overflow-hidden rounded-t-lg">
+                <div className="aspect-video bg-[#36454f] relative overflow-hidden rounded-t-lg">
                   {project.thumbnail_url ? (
                     <img 
                       src={project.thumbnail_url} 
@@ -177,13 +180,13 @@ export function DashboardContent({ initialProjects }: DashboardContentProps) {
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-primary/10 to-accent/10">
-                      <Film className="w-12 h-12 text-muted-foreground/50" />
+                    <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#00f0ff]/10 to-[#36454f]/30">
+                      <Film className="w-12 h-12 text-[#00f0ff]/30" />
                     </div>
                   )}
                   {project.status === "finished" && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Play className="w-12 h-12 text-white" />
+                    <div className="absolute inset-0 flex items-center justify-center bg-[#36454f]/70 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Play className="w-12 h-12 text-[#00f0ff]" />
                     </div>
                   )}
                   <Badge
