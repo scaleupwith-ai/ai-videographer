@@ -164,42 +164,56 @@ If no overlays needed, set imageOverlays to empty array [].`;
 
 // ============================================================================
 // Helper: Normalize scene durations to match target exactly
+// IMPORTANT: Must account for transition overlap - xfade removes transition duration from total
 // ============================================================================
 function normalizeSceneDurations(scenes: any[], targetDuration: number): any[] {
   if (!scenes || scenes.length === 0) return scenes;
   
-  // Calculate current total
-  let currentTotal = scenes.reduce((sum, s) => sum + (s.durationSec || 0), 0);
-  let difference = targetDuration - currentTotal;
-  
-  console.log(`[Duration Fix] Current: ${currentTotal}s, Target: ${targetDuration}s, Diff: ${difference}s`);
-  
   // Make a copy to avoid mutation
   const adjustedScenes = scenes.map(s => ({ ...s }));
   
+  // Calculate transition overlap - each transition removes its duration from total video length
+  let transitionOverlap = 0;
+  for (let i = 0; i < adjustedScenes.length - 1; i++) {
+    const scene = adjustedScenes[i];
+    if (scene.transitionOut && scene.transitionOut !== "none") {
+      const transitionDuration = scene.transitionDuration || 0.5;
+      transitionOverlap += transitionDuration;
+    }
+  }
+  
+  // The actual target for scene durations must be: targetDuration + transitionOverlap
+  // Because: actualVideoDuration = sum(sceneDurations) - transitionOverlap
+  const adjustedTarget = targetDuration + transitionOverlap;
+  
+  // Calculate current total
+  let currentTotal = adjustedScenes.reduce((sum, s) => sum + (s.durationSec || 0), 0);
+  let difference = adjustedTarget - currentTotal;
+  
+  console.log(`[Duration Fix] Scene total: ${currentTotal}s, Target: ${targetDuration}s, Transition overlap: ${transitionOverlap}s`);
+  console.log(`[Duration Fix] Adjusted target (with overlap): ${adjustedTarget}s, Diff: ${difference}s`);
+  
   // ALWAYS ensure exact match - this prevents video pause at end
   if (Math.abs(difference) < 0.05) {
-    // Already close enough
+    console.log(`[Duration Fix] Already close enough, no adjustment needed`);
     return adjustedScenes;
   }
   
   if (difference > 0) {
     // Video is TOO SHORT - need to extend scenes
-    // Strategy: Distribute extra time proportionally, favoring longer scenes
     console.log(`[Duration Fix] Extending video by ${difference}s`);
     
-    // First try: distribute proportionally
-    const adjustmentFactor = targetDuration / currentTotal;
+    // Distribute proportionally
+    const adjustmentFactor = adjustedTarget / currentTotal;
     adjustedScenes.forEach(scene => {
       scene.durationSec = Math.round(scene.durationSec * adjustmentFactor * 10) / 10;
     });
     
     // Verify and fix rounding errors
     currentTotal = adjustedScenes.reduce((sum, s) => sum + s.durationSec, 0);
-    difference = targetDuration - currentTotal;
+    difference = adjustedTarget - currentTotal;
     
     if (Math.abs(difference) > 0.05) {
-      // Add remaining to last scene
       adjustedScenes[adjustedScenes.length - 1].durationSec += difference;
       console.log(`[Duration Fix] Added ${difference}s to last scene`);
     }
@@ -207,17 +221,16 @@ function normalizeSceneDurations(scenes: any[], targetDuration: number): any[] {
     // Video is TOO LONG - need to shorten scenes
     console.log(`[Duration Fix] Shortening video by ${Math.abs(difference)}s`);
     
-    const adjustmentFactor = targetDuration / currentTotal;
+    const adjustmentFactor = adjustedTarget / currentTotal;
     adjustedScenes.forEach(scene => {
       scene.durationSec = Math.max(2, Math.round(scene.durationSec * adjustmentFactor * 10) / 10);
     });
     
     // Verify and fix rounding errors
     currentTotal = adjustedScenes.reduce((sum, s) => sum + s.durationSec, 0);
-    difference = targetDuration - currentTotal;
+    difference = adjustedTarget - currentTotal;
     
     if (Math.abs(difference) > 0.05) {
-      // Adjust last scene
       adjustedScenes[adjustedScenes.length - 1].durationSec = Math.max(2, 
         adjustedScenes[adjustedScenes.length - 1].durationSec + difference
       );
@@ -226,13 +239,15 @@ function normalizeSceneDurations(scenes: any[], targetDuration: number): any[] {
   
   // Final validation
   const finalTotal = adjustedScenes.reduce((sum, s) => sum + s.durationSec, 0);
-  console.log(`[Duration Fix] Final total: ${finalTotal}s (target: ${targetDuration}s)`);
+  const effectiveDuration = finalTotal - transitionOverlap;
+  console.log(`[Duration Fix] Final scene total: ${finalTotal}s, Effective video duration: ${effectiveDuration}s (target: ${targetDuration}s)`);
   
   // CRITICAL: If still not matching, force last scene to match
-  if (Math.abs(finalTotal - targetDuration) > 0.05) {
+  if (Math.abs(effectiveDuration - targetDuration) > 0.1) {
     const lastScene = adjustedScenes[adjustedScenes.length - 1];
-    lastScene.durationSec = Math.max(2, lastScene.durationSec + (targetDuration - finalTotal));
-    console.log(`[Duration Fix] Force-adjusted last scene to ${lastScene.durationSec}s`);
+    const adjustment = targetDuration - effectiveDuration;
+    lastScene.durationSec = Math.max(2, lastScene.durationSec + adjustment);
+    console.log(`[Duration Fix] Force-adjusted last scene by ${adjustment}s`);
   }
   
   return adjustedScenes;
