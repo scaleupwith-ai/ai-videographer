@@ -483,7 +483,7 @@ export default function SettingsPage() {
                 value={settings.default_caption_font}
                 onValueChange={(v) => setSettings({ ...settings, default_caption_font: v })}
               >
-                <SelectTrigger>
+                <SelectTrigger style={{ fontFamily: settings.default_caption_font }}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

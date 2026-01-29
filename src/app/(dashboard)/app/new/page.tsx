@@ -1523,18 +1523,34 @@ export default function NewVideoPage() {
                             value={captionFont}
                             onValueChange={setCaptionFont}
                           >
-                            <SelectTrigger className="h-9">
+                            <SelectTrigger className="h-9" style={{ fontFamily: captionFont }}>
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="Inter">Inter</SelectItem>
-                              <SelectItem value="Space Grotesk">Space Grotesk</SelectItem>
-                              <SelectItem value="Roboto">Roboto</SelectItem>
-                              <SelectItem value="Montserrat">Montserrat</SelectItem>
-                              <SelectItem value="Poppins">Poppins</SelectItem>
-                              <SelectItem value="Oswald">Oswald</SelectItem>
-                              <SelectItem value="Bebas Neue">Bebas Neue</SelectItem>
-                              <SelectItem value="Impact">Impact</SelectItem>
+                              <SelectItem value="Inter" style={{ fontFamily: "'Inter', sans-serif" }}>
+                                <span className="text-base">Inter</span>
+                              </SelectItem>
+                              <SelectItem value="Space Grotesk" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                                <span className="text-base">Space Grotesk</span>
+                              </SelectItem>
+                              <SelectItem value="Roboto" style={{ fontFamily: "'Roboto', sans-serif" }}>
+                                <span className="text-base">Roboto</span>
+                              </SelectItem>
+                              <SelectItem value="Montserrat" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+                                <span className="text-base">Montserrat</span>
+                              </SelectItem>
+                              <SelectItem value="Poppins" style={{ fontFamily: "'Poppins', sans-serif" }}>
+                                <span className="text-base">Poppins</span>
+                              </SelectItem>
+                              <SelectItem value="Oswald" style={{ fontFamily: "'Oswald', sans-serif" }}>
+                                <span className="text-base">Oswald</span>
+                              </SelectItem>
+                              <SelectItem value="Bebas Neue" style={{ fontFamily: "'Bebas Neue', cursive" }}>
+                                <span className="text-base">Bebas Neue</span>
+                              </SelectItem>
+                              <SelectItem value="Impact" style={{ fontFamily: "Impact, sans-serif" }}>
+                                <span className="text-base">Impact</span>
+                              </SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
