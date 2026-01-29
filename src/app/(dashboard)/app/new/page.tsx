@@ -165,6 +165,10 @@ export default function NewVideoPage() {
   
   // Talking head specific state
   const [talkingHeadAsset, setTalkingHeadAsset] = useState<UserAsset | null>(null);
+  const [brollFrequency, setBrollFrequency] = useState<"low" | "medium" | "high">("medium");
+  const [brollLength, setBrollLength] = useState<number>(3); // seconds
+  const [talkingHeadCaptions, setTalkingHeadCaptions] = useState<boolean>(false);
+  const [talkingHeadPrompt, setTalkingHeadPrompt] = useState<string>("");
 
   // Fetch voices and music on mount
   useEffect(() => {
@@ -262,11 +266,8 @@ export default function NewVideoPage() {
         }
         break;
       case "talking-head-upload":
-        // For talking head, go directly to describe - no voice/script questions
-        // The user's video already has their audio
-        setWantVoiceover(false);
-        setHasScript(false);
-        setStep("describe");
+        // For talking head, go directly to generate - all options are on this page
+        handleGenerate();
         break;
       case "voiceover":
         setStep("script");
@@ -353,11 +354,14 @@ export default function NewVideoPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            title: description.slice(0, 50) || "Talking Head Video",
-            description: description,
+            title: talkingHeadPrompt.slice(0, 50) || "Talking Head Video",
+            description: talkingHeadPrompt || "Add relevant b-roll overlays to this talking head video",
             talkingHeadMode: true,
             talkingHeadAssetId: talkingHeadAsset.id,
             talkingHeadDuration: talkingHeadAsset.duration_sec || 60,
+            brollFrequency: brollFrequency,
+            brollLength: brollLength,
+            enableCaptions: talkingHeadCaptions,
             resolution: { width: 1920, height: 1080 },
           }),
         });
@@ -653,20 +657,21 @@ export default function NewVideoPage() {
 
       case "talking-head-upload":
         return (
-          <div className="max-w-3xl mx-auto space-y-8">
+          <div className="max-w-3xl mx-auto space-y-6">
             <div className="text-center">
-              <h1 className="text-3xl font-bold mb-2">Select Your Talking Head Video</h1>
-              <p className="text-muted-foreground">Choose the video where you&apos;re speaking to camera. AI will add b-roll overlays.</p>
+              <h1 className="text-3xl font-bold mb-2">Create Talking Head Video</h1>
+              <p className="text-muted-foreground">Select your video and configure b-roll settings</p>
             </div>
 
+            {/* Video Selection */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <UserSquare2 className="w-5 h-5 text-primary" />
-                  Your Videos
+                  Your Video
                 </CardTitle>
                 <CardDescription>
-                  Select your main footage. We&apos;ll keep your audio and add relevant b-roll clips on top.
+                  Select your talking head footage
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -735,16 +740,128 @@ export default function NewVideoPage() {
                 )}
                 
                 {talkingHeadAsset && (
-                  <div className="mt-6 p-4 bg-primary/10 rounded-xl border border-primary/20">
+                  <div className="mt-4 p-3 bg-primary/10 rounded-lg border border-primary/20">
                     <p className="text-sm font-medium flex items-center gap-2">
                       <Check className="w-4 h-4 text-primary" />
-                      Selected: {(talkingHeadAsset.metadata as { name?: string })?.name || talkingHeadAsset.filename}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Duration: {talkingHeadAsset.duration_sec ? `${Math.floor(talkingHeadAsset.duration_sec / 60)}:${String(Math.floor(talkingHeadAsset.duration_sec % 60)).padStart(2, '0')}` : "Unknown"}
+                      {(talkingHeadAsset.metadata as { name?: string })?.name || talkingHeadAsset.filename}
+                      <span className="text-muted-foreground font-normal">
+                        • {talkingHeadAsset.duration_sec ? `${Math.floor(talkingHeadAsset.duration_sec / 60)}:${String(Math.floor(talkingHeadAsset.duration_sec % 60)).padStart(2, '0')}` : "Unknown duration"}
+                      </span>
                     </p>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+
+            {/* B-Roll Settings */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Film className="w-5 h-5 text-primary" />
+                  B-Roll Settings
+                </CardTitle>
+                <CardDescription>
+                  Configure how often and how long b-roll clips appear
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Frequency */}
+                <div className="space-y-3">
+                  <Label>B-Roll Frequency</Label>
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      { value: "low" as const, label: "Low", desc: "Occasional cuts" },
+                      { value: "medium" as const, label: "Medium", desc: "Regular cuts" },
+                      { value: "high" as const, label: "High", desc: "Frequent cuts" },
+                    ].map((opt) => (
+                      <button
+                        key={opt.value}
+                        onClick={() => setBrollFrequency(opt.value)}
+                        className={cn(
+                          "p-4 rounded-xl border-2 text-left transition-all",
+                          brollFrequency === opt.value
+                            ? "border-primary bg-primary/10"
+                            : "border-border hover:border-primary/50"
+                        )}
+                      >
+                        <p className="font-semibold">{opt.label}</p>
+                        <p className="text-xs text-muted-foreground">{opt.desc}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Length */}
+                <div className="space-y-3">
+                  <Label>B-Roll Clip Length</Label>
+                  <div className="grid grid-cols-4 gap-3">
+                    {[
+                      { value: 2, label: "2 sec" },
+                      { value: 3, label: "3 sec" },
+                      { value: 4, label: "4 sec" },
+                      { value: 5, label: "5 sec" },
+                    ].map((opt) => (
+                      <button
+                        key={opt.value}
+                        onClick={() => setBrollLength(opt.value)}
+                        className={cn(
+                          "p-3 rounded-lg border-2 text-center transition-all",
+                          brollLength === opt.value
+                            ? "border-primary bg-primary/10"
+                            : "border-border hover:border-primary/50"
+                        )}
+                      >
+                        <p className="font-semibold">{opt.label}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Captions Toggle */}
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Add Captions</p>
+                    <p className="text-sm text-muted-foreground">Burn subtitles into the video</p>
+                  </div>
+                  <button
+                    onClick={() => setTalkingHeadCaptions(!talkingHeadCaptions)}
+                    className={cn(
+                      "w-14 h-7 rounded-full transition-colors relative",
+                      talkingHeadCaptions ? "bg-primary" : "bg-muted"
+                    )}
+                  >
+                    <div className={cn(
+                      "w-6 h-6 bg-white rounded-full absolute top-0.5 transition-all shadow-sm",
+                      talkingHeadCaptions ? "left-[30px]" : "left-0.5"
+                    )} />
+                  </button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* AI Prompt */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-primary" />
+                  AI Guidance
+                </CardTitle>
+                <CardDescription>
+                  Tell the AI what kind of b-roll to use (optional)
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Textarea
+                  value={talkingHeadPrompt}
+                  onChange={(e) => setTalkingHeadPrompt(e.target.value)}
+                  placeholder="E.g., Use tech-related b-roll, office environments, computer screens. Keep it professional and modern."
+                  rows={3}
+                  className="resize-none"
+                />
               </CardContent>
             </Card>
           </div>
@@ -1562,11 +1679,8 @@ export default function NewVideoPage() {
             <div className="flex items-center justify-between text-sm mb-2">
               <span className="text-muted-foreground">
                 {videoType === "talking-head" ? (
-                  // Talking head: video-type -> upload -> describe (3 steps)
-                  `Step ${
-                    step === "video-type" ? 1 :
-                    step === "talking-head-upload" ? 2 : 3
-                  } of 3`
+                  // Talking head: video-type -> upload & configure (2 steps)
+                  `Step ${step === "video-type" ? 1 : 2} of 2`
                 ) : (
                   // Voiceover: video-type -> voiceover -> script -> assets -> describe
                   `Step ${
@@ -1583,8 +1697,7 @@ export default function NewVideoPage() {
                 className="h-full bg-primary transition-all"
                 style={{ 
                   width: videoType === "talking-head" 
-                    ? (step === "video-type" ? "33%" :
-                       step === "talking-head-upload" ? "66%" : "100%")
+                    ? (step === "video-type" ? "50%" : "100%")
                     : (step === "video-type" ? "20%" :
                        step === "voiceover" ? "40%" :
                        step === "script" ? "60%" :
@@ -1625,7 +1738,7 @@ export default function NewVideoPage() {
               onClick={goToNextStep}
               disabled={!canProceed()}
             >
-              {step === "describe" || (aiMode && step === "voiceover") ? (
+              {step === "describe" || (aiMode && step === "voiceover") || step === "talking-head-upload" ? (
                 <>
                   <Sparkles className="w-4 h-4 mr-1" />
                   Generate Video
