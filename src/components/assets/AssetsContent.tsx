@@ -595,6 +595,9 @@ export function AssetsContent({ initialAssets }: AssetsContentProps) {
           filename: selectedAsset.filename,
           contentType: selectedAsset.mime_type,
           duration: selectedAsset.duration_sec,
+          metadata: {
+            asset_id: selectedAsset.id, // Pass asset ID so results are saved back
+          },
         }),
       });
       
@@ -610,6 +613,26 @@ export function AssetsContent({ initialAssets }: AssetsContentProps) {
       toast.error("Failed to start video analysis");
       setIsAnalyzing(false);
     }
+  };
+
+  // Refresh asset data from server
+  const refreshAsset = async (assetId: string) => {
+    try {
+      const response = await fetch(`/api/assets/${assetId}`);
+      if (response.ok) {
+        const { asset: updatedAsset } = await response.json();
+        // Update in assets list
+        setAssets(prev => prev.map(a => a.id === assetId ? updatedAsset : a));
+        // Update selected asset if it's the one being viewed
+        if (selectedAsset?.id === assetId) {
+          setSelectedAsset(updatedAsset);
+        }
+        return updatedAsset;
+      }
+    } catch (error) {
+      console.error("Failed to refresh asset:", error);
+    }
+    return null;
   };
 
   // Poll for analysis job status
@@ -639,6 +662,10 @@ export function AssetsContent({ initialAssets }: AssetsContentProps) {
             setIsAnalyzing(false);
             if (data.status === "done") {
               toast.success("Video analysis complete!");
+              // Refresh the asset to get the updated metadata
+              if (selectedAsset) {
+                await refreshAsset(selectedAsset.id);
+              }
             } else {
               toast.error(data.error || "Analysis failed");
             }
@@ -660,7 +687,7 @@ export function AssetsContent({ initialAssets }: AssetsContentProps) {
     return () => {
       cancelled = true;
     };
-  }, [analysisJobId]);
+  }, [analysisJobId, selectedAsset]);
 
   // Format file size
   const formatFileSize = (bytes: number | null) => {
@@ -1500,7 +1527,7 @@ export function AssetsContent({ initialAssets }: AssetsContentProps) {
                         <div className="flex items-center gap-2 mb-2">
                           <p className="text-sm font-medium">Description</p>
                           {metadata.aiGenerated && (
-                            <Badge variant="secondary" className="text-xs bg-[#00f0ff]/10 text-[#00f0ff] border-[#00f0ff]/30">
+                            <Badge variant="secondary" className="text-xs bg-primary/10 text-primary">
                               <Sparkles className="w-3 h-3 mr-1" />
                               AI Generated
                             </Badge>
@@ -1520,9 +1547,9 @@ export function AssetsContent({ initialAssets }: AssetsContentProps) {
                           {metadata.chapters.map((chapter, idx) => (
                             <div
                               key={idx}
-                              className="p-3 bg-[#2A2F38]/50 rounded-lg flex gap-3"
+                              className="p-3 bg-muted/50 rounded-lg flex gap-3"
                             >
-                              <Badge variant="outline" className="shrink-0 font-mono text-xs border-[#36454f]">
+                              <Badge variant="outline" className="shrink-0 font-mono text-xs">
                                 {formatDuration(chapter.start)}
                               </Badge>
                               <div className="min-w-0">
@@ -1547,9 +1574,9 @@ export function AssetsContent({ initialAssets }: AssetsContentProps) {
                           {metadata.highlights.map((highlight, idx) => (
                             <div
                               key={idx}
-                              className="p-3 bg-[#00f0ff]/5 rounded-lg flex gap-3 border border-[#00f0ff]/20"
+                              className="p-3 bg-primary/5 rounded-lg flex gap-3 border border-primary/20"
                             >
-                              <Badge variant="outline" className="shrink-0 font-mono text-xs border-[#00f0ff]/30 text-[#00f0ff]">
+                              <Badge variant="outline" className="shrink-0 font-mono text-xs border-primary/30 text-primary">
                                 {formatDuration(highlight.start)}
                               </Badge>
                               <div className="min-w-0">
@@ -1586,7 +1613,7 @@ export function AssetsContent({ initialAssets }: AssetsContentProps) {
                         <div className="flex items-center justify-between mb-4">
                           <div>
                             <p className="font-medium flex items-center gap-2">
-                              <Sparkles className="w-4 h-4 text-[#00f0ff]" />
+                              <Sparkles className="w-4 h-4 text-primary" />
                               AI Video Analysis
                             </p>
                             <p className="text-xs text-muted-foreground">
@@ -1598,7 +1625,6 @@ export function AssetsContent({ initialAssets }: AssetsContentProps) {
                               onClick={startVideoAnalysis}
                               disabled={isAnalyzing}
                               size="sm"
-                              className="bg-[#00f0ff] hover:bg-[#00f0ff]/90 text-[#36454f] font-semibold"
                             >
                               {isAnalyzing ? (
                                 <>

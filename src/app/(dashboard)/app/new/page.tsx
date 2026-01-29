@@ -91,6 +91,7 @@ interface Clip {
 
 type Step = 
   | "video-type"
+  | "talking-head-upload"  // New step for talking head video upload
   | "voiceover" 
   | "script" 
   | "assets" 
@@ -161,6 +162,9 @@ export default function NewVideoPage() {
   
   // Rendering
   const [isRendering, setIsRendering] = useState(false);
+  
+  // Talking head specific state
+  const [talkingHeadAsset, setTalkingHeadAsset] = useState<UserAsset | null>(null);
 
   // Fetch voices and music on mount
   useEffect(() => {
@@ -250,17 +254,29 @@ export default function NewVideoPage() {
     switch (step) {
       case "video-type":
         if (videoType === "talking-head") {
-          // Talking head always has voiceover
-          setWantVoiceover(true);
+          // Talking head goes to upload step first
+          fetchUserAssets();
+          setStep("talking-head-upload");
+        } else {
+          setStep("voiceover");
         }
-        setStep("voiceover");
+        break;
+      case "talking-head-upload":
+        // After selecting talking head video, go to script
+        setWantVoiceover(true); // Talking head always has voiceover
+        setStep("script");
         break;
       case "voiceover":
         setStep("script");
         break;
       case "script":
-        setStep("assets");
-        fetchUserAssets();
+        if (videoType === "talking-head") {
+          // Skip assets step for talking head - they already selected their video
+          setStep("describe");
+        } else {
+          setStep("assets");
+          fetchUserAssets();
+        }
         break;
       case "assets":
         setStep("describe");
@@ -273,17 +289,28 @@ export default function NewVideoPage() {
 
   const goToPrevStep = () => {
     switch (step) {
+      case "talking-head-upload":
+        setStep("video-type");
+        break;
       case "voiceover":
         setStep("video-type");
         break;
       case "script":
-        setStep("voiceover");
+        if (videoType === "talking-head") {
+          setStep("talking-head-upload");
+        } else {
+          setStep("voiceover");
+        }
         break;
       case "assets":
         setStep("script");
         break;
       case "describe":
-        setStep("assets");
+        if (videoType === "talking-head") {
+          setStep("script");
+        } else {
+          setStep("assets");
+        }
         break;
       case "timeline":
         setStep("describe");
@@ -295,6 +322,8 @@ export default function NewVideoPage() {
     switch (step) {
       case "video-type":
         return videoType !== null;
+      case "talking-head-upload":
+        return talkingHeadAsset !== null;
       case "voiceover":
         // In AI mode, just need description
         if (aiMode) return description.trim().length > 10;
@@ -302,7 +331,7 @@ export default function NewVideoPage() {
         if (wantVoiceover && !selectedVoiceId) return false;
         return true;
       case "script":
-        if (wantVoiceover) {
+        if (wantVoiceover || videoType === "talking-head") {
           if (hasScript === null) return false;
           if (hasScript && !script.trim()) return false;
         }
@@ -524,7 +553,7 @@ export default function NewVideoPage() {
         return (
           <div className="max-w-2xl mx-auto space-y-8">
             <div className="text-center">
-              <h1 className="text-3xl font-bold mb-2 bg-gradient-to-r from-[#00f0ff] to-white bg-clip-text text-transparent">
+              <h1 className="text-3xl font-bold mb-2">
                 What type of video?
               </h1>
               <p className="text-muted-foreground">Choose the style that best fits your content</p>
@@ -537,19 +566,19 @@ export default function NewVideoPage() {
                 className={cn(
                   "p-6 rounded-2xl border-2 transition-all text-left group hover:scale-[1.02]",
                   videoType === "talking-head"
-                    ? "border-[#00f0ff] bg-[#00f0ff]/10 shadow-lg shadow-[#00f0ff]/20"
-                    : "border-[#36454f]/50 bg-[#2A2F38]/30 hover:border-[#00f0ff]/50"
+                    ? "border-primary bg-primary/10"
+                    : "border-border bg-card hover:border-primary/50"
                 )}
               >
                 <div className={cn(
                   "w-16 h-16 rounded-2xl flex items-center justify-center mb-4 transition-colors",
                   videoType === "talking-head" 
-                    ? "bg-[#00f0ff]/20" 
-                    : "bg-[#36454f]/50 group-hover:bg-[#00f0ff]/10"
+                    ? "bg-primary/20" 
+                    : "bg-muted group-hover:bg-primary/10"
                 )}>
                   <UserSquare2 className={cn(
                     "w-8 h-8 transition-colors",
-                    videoType === "talking-head" ? "text-[#00f0ff]" : "text-muted-foreground"
+                    videoType === "talking-head" ? "text-primary" : "text-muted-foreground"
                   )} />
                 </div>
                 <h3 className="text-xl font-semibold mb-2">Talking Head</h3>
@@ -557,9 +586,9 @@ export default function NewVideoPage() {
                   Upload your own talking head footage. AI will sync your video with the script and add b-roll overlays.
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <Badge variant="outline" className="text-xs border-[#36454f]">Your Face</Badge>
-                  <Badge variant="outline" className="text-xs border-[#36454f]">B-Roll Overlays</Badge>
-                  <Badge variant="outline" className="text-xs border-[#36454f]">Lip Sync</Badge>
+                  <Badge variant="outline" className="text-xs">Your Face</Badge>
+                  <Badge variant="outline" className="text-xs">B-Roll Overlays</Badge>
+                  <Badge variant="outline" className="text-xs">Lip Sync</Badge>
                 </div>
               </button>
 
@@ -569,19 +598,19 @@ export default function NewVideoPage() {
                 className={cn(
                   "p-6 rounded-2xl border-2 transition-all text-left group hover:scale-[1.02]",
                   videoType === "voiceover"
-                    ? "border-[#00f0ff] bg-[#00f0ff]/10 shadow-lg shadow-[#00f0ff]/20"
-                    : "border-[#36454f]/50 bg-[#2A2F38]/30 hover:border-[#00f0ff]/50"
+                    ? "border-primary bg-primary/10"
+                    : "border-border bg-card hover:border-primary/50"
                 )}
               >
                 <div className={cn(
                   "w-16 h-16 rounded-2xl flex items-center justify-center mb-4 transition-colors",
                   videoType === "voiceover" 
-                    ? "bg-[#00f0ff]/20" 
-                    : "bg-[#36454f]/50 group-hover:bg-[#00f0ff]/10"
+                    ? "bg-primary/20" 
+                    : "bg-muted group-hover:bg-primary/10"
                 )}>
                   <Volume2 className={cn(
                     "w-8 h-8 transition-colors",
-                    videoType === "voiceover" ? "text-[#00f0ff]" : "text-muted-foreground"
+                    videoType === "voiceover" ? "text-primary" : "text-muted-foreground"
                   )} />
                 </div>
                 <h3 className="text-xl font-semibold mb-2">Voiceover Video</h3>
@@ -589,12 +618,155 @@ export default function NewVideoPage() {
                   AI generates everything from your description - script, voiceover, b-roll footage, and music.
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <Badge variant="outline" className="text-xs border-[#36454f]">AI Voice</Badge>
-                  <Badge variant="outline" className="text-xs border-[#36454f]">Stock B-Roll</Badge>
-                  <Badge variant="outline" className="text-xs border-[#36454f]">Music</Badge>
+                  <Badge variant="outline" className="text-xs">AI Voice</Badge>
+                  <Badge variant="outline" className="text-xs">Stock B-Roll</Badge>
+                  <Badge variant="outline" className="text-xs">Music</Badge>
                 </div>
               </button>
             </div>
+          </div>
+        );
+
+      case "talking-head-upload":
+        return (
+          <div className="max-w-3xl mx-auto space-y-8">
+            <div className="text-center">
+              <h1 className="text-3xl font-bold mb-2">Select Your Talking Head Video</h1>
+              <p className="text-muted-foreground">Choose the video where you&apos;re speaking to camera</p>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <UserSquare2 className="w-5 h-5 text-primary" />
+                  Your Videos
+                </CardTitle>
+                <CardDescription>
+                  Select the main talking head footage. AI will sync it with your script and add b-roll overlays.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {userAssets.filter(a => a.kind === "video").length === 0 ? (
+                  <div className="text-center py-8">
+                    <Upload className="w-12 h-12 mx-auto mb-3 text-muted-foreground" />
+                    <p className="text-muted-foreground mb-3">
+                      You don&apos;t have any videos yet
+                    </p>
+                    <Button onClick={() => router.push("/app/assets")}>
+                      Upload Video
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    {userAssets.filter(a => a.kind === "video").map((asset) => {
+                      const isSelected = talkingHeadAsset?.id === asset.id;
+                      const meta = asset.metadata || {};
+                      
+                      return (
+                        <button
+                          key={asset.id}
+                          onClick={() => setTalkingHeadAsset(isSelected ? null : asset)}
+                          className={cn(
+                            "relative aspect-video rounded-xl border-2 overflow-hidden transition-all hover:scale-[1.02]",
+                            isSelected
+                              ? "border-primary ring-2 ring-primary/30"
+                              : "border-border hover:border-primary/50"
+                          )}
+                        >
+                          {asset.thumbnail_url || asset.public_url ? (
+                            <video
+                              src={asset.public_url}
+                              className="w-full h-full object-cover"
+                              muted
+                              onMouseEnter={(e) => e.currentTarget.play().catch(() => {})}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.pause();
+                                e.currentTarget.currentTime = 0;
+                              }}
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-muted flex items-center justify-center">
+                              <Film className="w-8 h-8 text-muted-foreground" />
+                            </div>
+                          )}
+                          {isSelected && (
+                            <div className="absolute top-2 right-2 w-7 h-7 bg-primary rounded-full flex items-center justify-center shadow-lg">
+                              <Check className="w-4 h-4 text-primary-foreground" />
+                            </div>
+                          )}
+                          {asset.duration_sec && (
+                            <Badge variant="secondary" className="absolute bottom-2 right-2 text-xs bg-black/70 text-white">
+                              {Math.floor(asset.duration_sec / 60)}:{String(Math.floor(asset.duration_sec % 60)).padStart(2, '0')}
+                            </Badge>
+                          )}
+                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
+                            <p className="text-xs text-white truncate">
+                              {meta.name || asset.filename}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                
+                {talkingHeadAsset && (
+                  <div className="mt-6 p-4 bg-primary/10 rounded-xl border border-primary/20">
+                    <p className="text-sm font-medium flex items-center gap-2">
+                      <Check className="w-4 h-4 text-primary" />
+                      Selected: {(talkingHeadAsset.metadata as { name?: string })?.name || talkingHeadAsset.filename}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Duration: {talkingHeadAsset.duration_sec ? `${Math.floor(talkingHeadAsset.duration_sec / 60)}:${String(Math.floor(talkingHeadAsset.duration_sec % 60)).padStart(2, '0')}` : "Unknown"}
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Voice selection for talking head */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Mic className="w-5 h-5 text-primary" />
+                  Choose AI Voice
+                </CardTitle>
+                <CardDescription>
+                  Select the voice for your generated script narration
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {voices.map((voice) => (
+                    <button
+                      key={voice.id}
+                      onClick={() => setSelectedVoiceId(voice.id)}
+                      className={cn(
+                        "p-3 rounded-lg border text-left transition-all",
+                        selectedVoiceId === voice.id
+                          ? "border-primary bg-primary/10"
+                          : "border-border hover:border-primary/50"
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Avatar className="w-8 h-8">
+                          {voice.profile_image_url ? (
+                            <AvatarImage src={voice.profile_image_url} />
+                          ) : null}
+                          <AvatarFallback>{voice.name[0]}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="font-medium text-sm">{voice.name}</p>
+                          {voice.is_default && (
+                            <Badge variant="secondary" className="text-xs">Default</Badge>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           </div>
         );
 
@@ -1405,24 +1577,40 @@ export default function NewVideoPage() {
     <div className="flex-1 flex flex-col min-h-0 bg-background">
       {/* Progress bar */}
       {step !== "generating" && step !== "timeline" && (
-        <div className="shrink-0 border-b border-[#36454f]/30 bg-[#2A2F38]/50">
+        <div className="shrink-0 border-b bg-card">
           <div className="max-w-4xl mx-auto px-6 py-4">
             <div className="flex items-center justify-between text-sm mb-2">
-              <span className="text-muted-foreground">Step {
-                step === "video-type" ? 1 :
-                step === "voiceover" ? 2 :
-                step === "script" ? 3 :
-                step === "assets" ? 4 : 5
-              } of 5</span>
+              <span className="text-muted-foreground">
+                {videoType === "talking-head" ? (
+                  // Talking head: video-type -> upload -> script -> describe
+                  `Step ${
+                    step === "video-type" ? 1 :
+                    step === "talking-head-upload" ? 2 :
+                    step === "script" ? 3 : 4
+                  } of 4`
+                ) : (
+                  // Voiceover: video-type -> voiceover -> script -> assets -> describe
+                  `Step ${
+                    step === "video-type" ? 1 :
+                    step === "voiceover" ? 2 :
+                    step === "script" ? 3 :
+                    step === "assets" ? 4 : 5
+                  } of 5`
+                )}
+              </span>
             </div>
-            <div className="h-2 bg-[#36454f]/30 rounded-full overflow-hidden">
+            <div className="h-2 bg-muted rounded-full overflow-hidden">
               <div 
-                className="h-full bg-[#00f0ff] transition-all"
+                className="h-full bg-primary transition-all"
                 style={{ 
-                  width: step === "video-type" ? "20%" :
-                         step === "voiceover" ? "40%" :
-                         step === "script" ? "60%" :
-                         step === "assets" ? "80%" : "100%"
+                  width: videoType === "talking-head" 
+                    ? (step === "video-type" ? "25%" :
+                       step === "talking-head-upload" ? "50%" :
+                       step === "script" ? "75%" : "100%")
+                    : (step === "video-type" ? "20%" :
+                       step === "voiceover" ? "40%" :
+                       step === "script" ? "60%" :
+                       step === "assets" ? "80%" : "100%")
                 }}
               />
             </div>
@@ -1445,13 +1633,12 @@ export default function NewVideoPage() {
 
       {/* Navigation */}
       {step !== "generating" && step !== "timeline" && (
-        <div className="shrink-0 border-t border-[#36454f]/30 bg-[#2A2F38]/50">
+        <div className="shrink-0 border-t bg-card">
           <div className="max-w-4xl mx-auto px-6 py-4 flex justify-between">
             <Button
               variant="outline"
               onClick={goToPrevStep}
               disabled={step === "video-type"}
-              className="border-[#36454f] hover:bg-[#36454f]/30"
             >
               <ChevronLeft className="w-4 h-4 mr-1" />
               Back
@@ -1459,7 +1646,6 @@ export default function NewVideoPage() {
             <Button
               onClick={goToNextStep}
               disabled={!canProceed()}
-              className="bg-[#00f0ff] hover:bg-[#00f0ff]/90 text-[#36454f] font-semibold"
             >
               {step === "describe" || (aiMode && step === "voiceover") ? (
                 <>
