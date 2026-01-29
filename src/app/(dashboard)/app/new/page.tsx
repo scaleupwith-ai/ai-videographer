@@ -347,7 +347,7 @@ export default function NewVideoPage() {
     try {
       // Handle talking head videos differently
       if (videoType === "talking-head" && talkingHeadAsset) {
-        setGenerationStatus("Analyzing your video for b-roll opportunities...");
+        setGenerationStatus("Step 1/3: AI is analyzing your video and selecting b-roll...");
         
         // For talking head, we use their video as the base and add b-roll overlays
         const timelineRes = await fetch("/api/ai/build-timeline", {
@@ -373,8 +373,28 @@ export default function NewVideoPage() {
         }
         
         const timelineData = await timelineRes.json();
-        toast.success("Timeline generated! Opening editor...");
-        router.push(`/app/projects/${timelineData.projectId}/edit`);
+        const newProjectId = timelineData.projectId;
+        
+        // Automatically start rendering
+        setGenerationStatus("Step 2/3: Starting render...");
+        const renderRes = await fetch(`/api/projects/${newProjectId}/render`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+
+        if (!renderRes.ok) {
+          const errorData = await renderRes.json().catch(() => ({}));
+          console.error("Render API error:", errorData);
+          // Still redirect to project page even if render fails - they can retry
+          toast.error("Render failed to start, but you can retry from the project page");
+          router.push(`/app/projects/${newProjectId}`);
+          return;
+        }
+        
+        setGenerationStatus("Step 3/3: Redirecting to your video...");
+        toast.success("Rendering started! Watch progress on the project page.");
+        router.push(`/app/projects/${newProjectId}`);
         return;
       }
 
@@ -397,7 +417,7 @@ export default function NewVideoPage() {
         
         if (!hasScript || !script.trim()) {
           // Generate script first
-          setGenerationStatus("Generating script...");
+          setGenerationStatus("Step 1/4: AI is writing your script...");
           
           const scriptRes = await fetch("/api/ai/generate-script", {
             method: "POST",
@@ -416,7 +436,7 @@ export default function NewVideoPage() {
         }
 
         // Step 2: Generate voiceover with timed captions from Deepgram
-        setGenerationStatus("Generating voiceover audio...");
+        setGenerationStatus("Step 1/4: Generating voiceover audio...");
         
         const voiceoverRes = await fetch("/api/ai/generate-voiceover", {
           method: "POST",
@@ -441,7 +461,7 @@ export default function NewVideoPage() {
       }
 
       // Step 3: Build timeline (with timed captions if available)
-      setGenerationStatus("Building video timeline...");
+      setGenerationStatus("Step 2/4: AI is building your video timeline...");
       
       // Map volume label to actual value
       const volumeMap = { faint: 0.1, low: 0.2, medium: 0.3, loud: 0.5 };
@@ -488,10 +508,26 @@ export default function NewVideoPage() {
       const timelineData = await timelineRes.json();
       const newProjectId = timelineData.projectId;
       
-      // Redirect to editor for review/editing before render
-      // User will click "Render" when ready
-      toast.success("Timeline generated! Opening editor...");
-      router.push(`/app/projects/${newProjectId}/edit`);
+      // Automatically start rendering after timeline creation
+      setGenerationStatus("Step 3/4: Starting render...");
+      const renderRes = await fetch(`/api/projects/${newProjectId}/render`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+
+      if (!renderRes.ok) {
+        const errorData = await renderRes.json().catch(() => ({}));
+        console.error("Render API error:", errorData);
+        // Still redirect to project page even if render fails - they can retry
+        toast.error("Render failed to start, but you can retry from the project page");
+        router.push(`/app/projects/${newProjectId}`);
+        return;
+      }
+      
+      setGenerationStatus("Step 4/4: Redirecting to your video...");
+      toast.success("Rendering started! Watch progress on the project page.");
+      router.push(`/app/projects/${newProjectId}`);
     } catch (error) {
       console.error("Generation error:", error);
       toast.error(error instanceof Error ? error.message : "Failed to generate video");
