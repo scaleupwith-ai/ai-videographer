@@ -183,18 +183,15 @@ export interface CreateTaskResponse {
  */
 export async function createIndexingTaskFromUrl(
   videoUrl: string,
-  indexId: string,
-  options: {
-    language?: string;
-  } = {}
+  indexId: string
 ): Promise<CreateTaskResponse> {
   const { apiKey } = getConfig();
   
   // TwelveLabs requires multipart/form-data for task creation
+  // Parameter must be "video_url" (not "url")
   const formData = new FormData();
   formData.append("index_id", indexId);
-  formData.append("url", videoUrl);
-  formData.append("language", options.language || "en");
+  formData.append("video_url", videoUrl);
   
   const url = `${TWELVELABS_API_BASE}/tasks`;
   console.log(`TwelveLabs API Request: POST ${url}`);
