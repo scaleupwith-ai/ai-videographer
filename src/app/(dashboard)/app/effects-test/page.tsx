@@ -1,14 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Play, Download, RotateCcw } from "lucide-react";
+import { Loader2, Play, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
 import { Slider } from "@/components/ui/slider";
-import { toast } from "sonner";
 
 interface EffectConfig {
   // Slide-in shape overlay settings
@@ -75,53 +73,45 @@ drawtext=text='${config.text}':fontsize=${config.fontSize}:fontcolor=${textColor
 
 export default function EffectsTestPage() {
   const [config, setConfig] = useState<EffectConfig>(DEFAULT_CONFIG);
-  const [isRendering, setIsRendering] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [animationKey, setAnimationKey] = useState(0);
 
-  const handleRender = async () => {
-    setIsRendering(true);
-    setProgress(0);
-    setPreviewUrl(null);
-
-    try {
-      // Simulate progress
-      const interval = setInterval(() => {
-        setProgress((prev) => Math.min(prev + 10, 90));
-      }, 300);
-
-      const res = await fetch("/api/effects/test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ effect: "slide-in-shape", config }),
-      });
-
-      clearInterval(interval);
-
-      if (!res.ok) {
-        const error = await res.json().catch(() => ({}));
-        throw new Error(error.error || "Failed to render effect");
-      }
-
-      const data = await res.json();
-      setProgress(100);
-      setPreviewUrl(data.previewUrl);
-      toast.success("Effect rendered!");
-    } catch (error) {
-      console.error("Render error:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to render");
-    } finally {
-      setIsRendering(false);
-    }
+  const handlePlayPreview = () => {
+    setAnimationKey(prev => prev + 1); // Force re-render of animation
+    setIsPlaying(true);
+    
+    // Stop after animation completes
+    const totalDuration = config.slideInDuration + config.holdDuration + config.slideOutDuration;
+    setTimeout(() => {
+      setIsPlaying(false);
+    }, totalDuration * 1000);
   };
 
   const handleReset = () => {
     setConfig(DEFAULT_CONFIG);
-    setPreviewUrl(null);
-    setProgress(0);
+    setIsPlaying(false);
   };
 
   const totalDuration = config.slideInDuration + config.holdDuration + config.slideOutDuration;
+  
+  // CSS animation keyframes for the slide-in effect
+  const slideInKeyframes = config.slideDirection === "right" ? `
+    @keyframes slideInRight-${animationKey} {
+      0% { transform: translateX(100%); }
+      ${(config.slideInDuration / totalDuration) * 100}% { transform: translateX(0); }
+      ${((config.slideInDuration + config.holdDuration) / totalDuration) * 100}% { transform: translateX(0); }
+      100% { transform: translateX(100%); }
+    }
+  ` : `
+    @keyframes slideInLeft-${animationKey} {
+      0% { transform: translateX(-100%); }
+      ${(config.slideInDuration / totalDuration) * 100}% { transform: translateX(0); }
+      ${((config.slideInDuration + config.holdDuration) / totalDuration) * 100}% { transform: translateX(0); }
+      100% { transform: translateX(-100%); }
+    }
+  `;
+  
+  const animationName = config.slideDirection === "right" ? `slideInRight-${animationKey}` : `slideInLeft-${animationKey}`;
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-background">
@@ -148,27 +138,15 @@ export default function EffectsTestPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
+                {/* Inject keyframes */}
+                <style>{slideInKeyframes}</style>
+                
                 <div className="aspect-video bg-black rounded-lg overflow-hidden relative">
-                  {isRendering ? (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
-                      <Loader2 className="w-12 h-12 animate-spin text-[#00f0ff]" />
-                      <p className="text-white">Rendering...</p>
-                      <div className="w-48">
-                        <Progress value={progress} className="h-2" />
-                      </div>
-                    </div>
-                  ) : previewUrl ? (
-                    <video
-                      src={previewUrl}
-                      controls
-                      autoPlay
-                      loop
-                      className="w-full h-full"
-                    />
-                  ) : (
+                  {/* Static preview when not playing */}
+                  {!isPlaying && (
                     <div className="absolute inset-0 flex items-center justify-center">
                       <div 
-                        className="h-full transition-all duration-500"
+                        className="h-full"
                         style={{
                           width: `${config.boxWidth}%`,
                           backgroundColor: config.boxColor,
@@ -191,23 +169,62 @@ export default function EffectsTestPage() {
                       </div>
                     </div>
                   )}
+                  
+                  {/* Animated preview when playing */}
+                  {isPlaying && (
+                    <div className="absolute inset-0 overflow-hidden">
+                      <div 
+                        key={animationKey}
+                        className="h-full absolute"
+                        style={{
+                          width: `${config.boxWidth}%`,
+                          backgroundColor: config.boxColor,
+                          right: config.slideDirection === "right" ? 0 : "auto",
+                          left: config.slideDirection === "left" ? 0 : "auto",
+                          animation: `${animationName} ${totalDuration}s ease-in-out forwards`,
+                        }}
+                      >
+                        <div className="flex items-center justify-center h-full p-4">
+                          <span 
+                            style={{
+                              color: config.textColor,
+                              fontSize: `${config.fontSize / 3}px`,
+                              fontFamily: config.textFont,
+                              textDecoration: "underline",
+                              textUnderlineOffset: "8px",
+                            }}
+                          >
+                            {config.text}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Play indicator */}
+                  {isPlaying && (
+                    <div className="absolute top-2 left-2 bg-red-500 text-white text-xs px-2 py-1 rounded flex items-center gap-1">
+                      <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                      Playing
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex gap-2 mt-4">
                   <Button 
-                    onClick={handleRender} 
-                    disabled={isRendering}
+                    onClick={handlePlayPreview} 
+                    disabled={isPlaying}
                     className="flex-1 bg-[#00f0ff] hover:bg-[#00d4e0] text-black"
                   >
-                    {isRendering ? (
+                    {isPlaying ? (
                       <>
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Rendering...
+                        Playing ({totalDuration.toFixed(1)}s)
                       </>
                     ) : (
                       <>
                         <Play className="w-4 h-4 mr-2" />
-                        Render Test
+                        Play Preview
                       </>
                     )}
                   </Button>
@@ -215,6 +232,10 @@ export default function EffectsTestPage() {
                     <RotateCcw className="w-4 h-4" />
                   </Button>
                 </div>
+                
+                <p className="text-xs text-muted-foreground mt-3 text-center">
+                  This is a CSS preview. The actual video will use FFmpeg for rendering.
+                </p>
               </CardContent>
             </Card>
 

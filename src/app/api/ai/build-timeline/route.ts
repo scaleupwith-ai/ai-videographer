@@ -866,7 +866,7 @@ RESPOND WITH ONLY THIS JSON:
     
     // Fetch audio assets (these are typically few, so we can load all)
     const [
-      { data: musicTracks },
+      { data: musicTracks, error: musicError },
       { data: soundEffects },
       { data: overlays },
     ] = await Promise.all([
@@ -874,6 +874,16 @@ RESPOND WITH ONLY THIS JSON:
       adminSupabase.from("sound_effects").select("*"),
       adminSupabase.from("overlays").select("*"),
     ]);
+    
+    // Debug logging for music
+    console.log(`[Build Timeline] Music tracks fetched: ${musicTracks?.length || 0} tracks`);
+    if (musicError) {
+      console.error(`[Build Timeline] Music fetch error:`, musicError);
+    }
+    if (musicTracks && musicTracks.length > 0) {
+      console.log(`[Build Timeline] First music track sample:`, JSON.stringify(musicTracks[0]));
+    }
+    console.log(`[Build Timeline] Incoming selectedMusicId: "${selectedMusicId}", musicVolume: ${musicVolume}`);
 
     // Fetch user assets if any are selected
     let userAssets: Array<{
