@@ -291,6 +291,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const body = await request.json();
     const { 
       title,
       script, 
@@ -305,12 +306,19 @@ export async function POST(request: NextRequest) {
       musicVolume,
       resolution,
       captionSettings,
-    } = await request.json() as {
+      // Talking head mode specific
+      talkingHeadMode,
+      talkingHeadAssetId,
+      talkingHeadDuration,
+      brollFrequency,
+      brollLength,
+      enableCaptions,
+    } = body as {
       title: string;
-      script: string;
+      script?: string;
       description?: string;
-      voiceoverAssetId: string | null;
-      voiceoverDurationSec: number;
+      voiceoverAssetId?: string | null;
+      voiceoverDurationSec?: number;
       voiceoverVolume?: number;
       selectedAssets?: string[];
       timedCaptions?: string;
@@ -323,6 +331,13 @@ export async function POST(request: NextRequest) {
         wordsPerBlock?: number;
         font?: string;
       };
+      // Talking head mode
+      talkingHeadMode?: boolean;
+      talkingHeadAssetId?: string;
+      talkingHeadDuration?: number;
+      brollFrequency?: "low" | "medium" | "high";
+      brollLength?: number;
+      enableCaptions?: boolean;
     };
 
     // Fetch user settings for intro/outro
@@ -362,8 +377,249 @@ export async function POST(request: NextRequest) {
     
     console.log(`[Build Timeline] Intro: ${introDuration}s, Outro: ${outroDuration}s`);
 
-    if (!script || voiceoverDurationSec <= 0) {
-      return NextResponse.json({ error: "Script and duration are required" }, { status: 400 });
+    // ========================================================================
+    // TALKING HEAD MODE - Different flow for talking head videos
+    // ========================================================================
+    if (talkingHeadMode && talkingHeadAssetId) {
+      console.log(`[Build Timeline] TALKING HEAD MODE`);
+      console.log(`[Build Timeline] Asset: ${talkingHeadAssetId}, Duration: ${talkingHeadDuration}s`);
+      console.log(`[Build Timeline] B-roll frequency: ${brollFrequency}, length: ${brollLength}s`);
+      
+      // Fetch the talking head asset
+      const { data: talkingHeadAsset, error: thError } = await adminSupabase
+        .from("media_assets")
+        .select("*")
+        .eq("id", talkingHeadAssetId)
+        .single();
+        
+      if (thError || !talkingHeadAsset) {
+        return NextResponse.json({ error: "Talking head asset not found" }, { status: 404 });
+      }
+      
+      const videoDuration = talkingHeadDuration || talkingHeadAsset.duration_sec || 60;
+      
+      // Calculate b-roll intervals based on frequency
+      const frequencyMap = {
+        low: 15,    // B-roll every 15 seconds
+        medium: 10, // B-roll every 10 seconds
+        high: 6,    // B-roll every 6 seconds
+      };
+      const brollInterval = frequencyMap[brollFrequency || "medium"];
+      const brollClipLength = brollLength || 3;
+      
+      // Calculate number of b-roll insertions
+      const numBrolls = Math.floor(videoDuration / brollInterval);
+      console.log(`[Build Timeline] Will insert ${numBrolls} b-roll clips at ${brollInterval}s intervals`);
+      
+      // Fetch b-roll clips
+      const { data: brollClips } = await adminSupabase
+        .from("clips")
+        .select("id, description, duration_seconds, clip_link, tags")
+        .gte("duration_seconds", brollClipLength)
+        .limit(50);
+      
+      if (!brollClips || brollClips.length === 0) {
+        console.log("[Build Timeline] No b-roll clips available, creating simple timeline");
+      }
+      
+      // Use AI to select relevant b-roll clips based on description
+      let brollOverlays: Array<{
+        clipId: string;
+        clipUrl: string;
+        startTime: number;
+        duration: number;
+        description: string;
+      }> = [];
+      
+      if (brollClips && brollClips.length > 0 && numBrolls > 0) {
+        const brollPrompt = `You are selecting b-roll video clips to overlay on a talking head video.
+
+The user's description of what b-roll they want: "${description || "relevant b-roll for the content"}"
+
+Available b-roll clips:
+${brollClips.slice(0, 30).map(c => `- ID: ${c.id}, Description: "${c.description?.slice(0, 100) || 'No description'}", Tags: [${(c.tags || []).slice(0, 5).join(", ")}]`).join("\n")}
+
+Select ${Math.min(numBrolls, brollClips.length)} DIFFERENT clips that best match the user's description.
+
+RESPOND WITH ONLY THIS JSON:
+{
+  "selectedClips": [
+    { "clipId": "uuid", "reason": "brief reason for selection" }
+  ]
+}`;
+
+        try {
+          const brollResult = await callAgent(
+            "You select relevant b-roll clips. Always respond with valid JSON.",
+            brollPrompt,
+            "BROLL_SELECTOR"
+          );
+          
+          // Build b-roll overlays at calculated intervals
+          const selectedClipIds = brollResult.selectedClips || [];
+          let clipIndex = 0;
+          
+          for (let i = 1; i <= numBrolls && clipIndex < selectedClipIds.length; i++) {
+            const startTime = i * brollInterval - brollClipLength; // Insert before the interval point
+            if (startTime < 0 || startTime + brollClipLength > videoDuration) continue;
+            
+            const selected = selectedClipIds[clipIndex];
+            const clip = brollClips.find(c => c.id === selected.clipId);
+            
+            if (clip && clip.clip_link) {
+              brollOverlays.push({
+                clipId: clip.id,
+                clipUrl: clip.clip_link,
+                startTime: Math.max(2, startTime), // Don't start in first 2 seconds
+                duration: Math.min(brollClipLength, clip.duration_seconds),
+                description: clip.description || "",
+              });
+              clipIndex++;
+            }
+          }
+        } catch (aiError) {
+          console.error("[Build Timeline] B-roll selection failed:", aiError);
+          // Fallback: randomly select clips
+          for (let i = 0; i < Math.min(numBrolls, brollClips.length); i++) {
+            const clip = brollClips[i];
+            const startTime = (i + 1) * brollInterval - brollClipLength;
+            if (startTime > 0 && startTime + brollClipLength < videoDuration && clip.clip_link) {
+              brollOverlays.push({
+                clipId: clip.id,
+                clipUrl: clip.clip_link,
+                startTime,
+                duration: Math.min(brollClipLength, clip.duration_seconds),
+                description: clip.description || "",
+              });
+            }
+          }
+        }
+      }
+      
+      console.log(`[Build Timeline] Created ${brollOverlays.length} b-roll overlay segments`);
+      
+      // Create the project ID
+      const projectId = uuid();
+      
+      // Build the talking head timeline
+      const talkingHeadTimeline = {
+        version: 1 as const,
+        project: {
+          id: projectId,
+          title: title || "Talking Head Video",
+          type: "talking_head",
+          aspectRatio: "landscape" as const,
+          resolution: resolution || { width: 1920, height: 1080 },
+          fps: 30,
+        },
+        scenes: [
+          {
+            id: "scene-main",
+            assetId: talkingHeadAsset.id,
+            clipId: talkingHeadAsset.id,
+            clipUrl: talkingHeadAsset.public_url,
+            intent: "Main talking head footage",
+            clipDescription: (talkingHeadAsset.metadata as any)?.description || talkingHeadAsset.filename,
+            isUserAsset: true,
+            isTalkingHead: true,
+            kind: "video" as const,
+            inSec: 0,
+            outSec: videoDuration,
+            durationSec: videoDuration,
+            cropMode: "cover" as const,
+            overlays: { title: null, subtitle: null, position: "lower_third" as const, stylePreset: "minimal" as const },
+            transitionOut: null,
+            transitionDuration: 0,
+          },
+        ],
+        brollOverlays: brollOverlays.map((broll, idx) => ({
+          id: `broll-${idx + 1}`,
+          clipId: broll.clipId,
+          clipUrl: broll.clipUrl,
+          description: broll.description,
+          atTimeSec: broll.startTime,
+          durationSec: broll.duration,
+          transitionIn: "fade",
+          transitionOut: "fade",
+          transitionDuration: 0.3,
+        })),
+        soundEffects: [],
+        imageOverlays: [],
+        global: {
+          music: { assetId: null, audioUrl: null, title: null, volume: 0.2 },
+          voiceover: { assetId: null, volume: 1.0, startOffset: 0 },
+          captions: { 
+            enabled: enableCaptions || false, 
+            burnIn: enableCaptions || false,
+            wordsPerBlock: 3,
+            font: "Inter",
+            srtAssetId: null,
+            startOffset: 0,
+            segments: [],
+          },
+          brand: {
+            presetId: null,
+            logoAssetId: null,
+            logoPosition: "top-right" as const,
+            logoSize: 80,
+            colors: { primary: "#00b4d8", secondary: "#0077b6", accent: "#ff6b6b", text: "#ffffff" },
+            safeMargins: { top: 50, bottom: 50, left: 50, right: 50 },
+          },
+          export: { codec: "h264" as const, crf: 23, bitrateMbps: 8, audioKbps: 192 },
+        },
+        rendering: {
+          output: { url: null, thumbnailUrl: null, durationSec: null, sizeBytes: null },
+          voiceoverDurationSec: 0,
+          totalDurationSec: videoDuration,
+          introDurationSec: 0,
+          outroDurationSec: 0,
+        },
+        formOptions: {
+          talkingHeadMode: true,
+          talkingHeadAssetId,
+          brollFrequency,
+          brollLength,
+          enableCaptions,
+          description,
+        },
+      };
+      
+      // Create project
+      const { data: project, error: projectError } = await adminSupabase
+        .from("projects")
+        .insert({
+          owner_id: user.id,
+          title: title || "Talking Head Video",
+          type: "talking_head",
+          timeline_json: talkingHeadTimeline,
+          status: "draft",
+          duration_sec: videoDuration,
+          script: null,
+          description: description || null,
+        })
+        .select()
+        .single();
+
+      if (projectError || !project) {
+        console.error("Project creation error:", projectError);
+        return NextResponse.json({ error: "Failed to create project" }, { status: 500 });
+      }
+
+      console.log(`[Build Timeline] Talking head project created with ${brollOverlays.length} b-roll overlays`);
+
+      return NextResponse.json({
+        projectId: project.id,
+        timeline: talkingHeadTimeline,
+        totalDurationSec: videoDuration,
+        brollCount: brollOverlays.length,
+      });
+    }
+    
+    // ========================================================================
+    // STANDARD VOICEOVER MODE - Requires script and duration
+    // ========================================================================
+    if (!script || !voiceoverDurationSec || voiceoverDurationSec <= 0) {
+      return NextResponse.json({ error: "Script and duration are required for voiceover videos" }, { status: 400 });
     }
 
     // ========================================================================
