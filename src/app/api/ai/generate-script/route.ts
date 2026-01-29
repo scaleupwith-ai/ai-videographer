@@ -9,10 +9,12 @@ const openai = new OpenAI({
 const SCRIPT_PROMPT = `You are a professional video scriptwriter. Create a compelling voiceover script with natural speech patterns.
 
 RULES:
+- CRITICAL: Match the EXACT target duration - if user asks for 2 minutes, write a 2-minute script
 - Write natural, conversational narration
 - Keep sentences short and punchy
 - Match the tone to the video type (professional, inspiring, casual, etc.)
 - Aim for 2.5 words per second (150 words per minute)
+- Parse duration from user's description (e.g., "2 minute video" = 120 seconds = 300 words)
 
 PAUSES AND EMPHASIS (CRITICAL - use these for natural speech):
 - Use <break time="0.5s"/> for short pauses between phrases
@@ -65,9 +67,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Description is required" }, { status: 400 });
     }
 
-    const durationHint = targetDurationSec 
-      ? `Target duration: ${targetDurationSec} seconds (approximately ${Math.round(targetDurationSec * 2.5)} words)`
-      : "Create a 30-60 second script (75-150 words)";
+    // Parse duration from description if not explicitly provided
+    let parsedDuration = targetDurationSec;
+    if (!parsedDuration && videoDescription) {
+      // Try to find duration mentions like "2 minute", "90 second", "1.5 min"
+      const minuteMatch = videoDescription.match(/(\d+(?:\.\d+)?)\s*(?:minute|min)/i);
+      const secondMatch = videoDescription.match(/(\d+)\s*second/i);
+      
+      if (minuteMatch) {
+        parsedDuration = parseFloat(minuteMatch[1]) * 60;
+      } else if (secondMatch) {
+        parsedDuration = parseInt(secondMatch[1]);
+      }
+    }
+    
+    const durationHint = parsedDuration 
+      ? `Target duration: ${parsedDuration} seconds (approximately ${Math.round(parsedDuration * 2.5)} words). MATCH THIS DURATION EXACTLY.`
+      : "Create a 45-60 second script (110-150 words) unless user specifies otherwise";
 
     // Build asset context if user assets are provided
     let assetContext = "";

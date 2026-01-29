@@ -187,32 +187,26 @@ export default function TemplatesPage() {
     setUploadingImage(key);
     
     try {
-      // Get upload URL
+      // Upload file using FormData
+      const formData = new FormData();
+      formData.append("file", file);
+      
       const uploadRes = await fetch("/api/upload", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: file.name,
-          contentType: file.type,
-          folder: "template-assets",
-        }),
+        body: formData,
       });
       
-      if (!uploadRes.ok) throw new Error("Failed to get upload URL");
+      if (!uploadRes.ok) {
+        const error = await uploadRes.json().catch(() => ({}));
+        throw new Error(error.error || "Failed to upload image");
+      }
       
-      const { uploadUrl, publicUrl } = await uploadRes.json();
-      
-      // Upload file
-      await fetch(uploadUrl, {
-        method: "PUT",
-        body: file,
-        headers: { "Content-Type": file.type },
-      });
+      const { url } = await uploadRes.json();
       
       // Update variable value
       setVariableValues(prev => ({
         ...prev,
-        [key]: publicUrl,
+        [key]: url,
       }));
       
       // Store preview
@@ -224,7 +218,7 @@ export default function TemplatesPage() {
       toast.success("Image uploaded!");
     } catch (error) {
       console.error("Image upload error:", error);
-      toast.error("Failed to upload image");
+      toast.error(error instanceof Error ? error.message : "Failed to upload image");
     } finally {
       setUploadingImage(null);
     }
