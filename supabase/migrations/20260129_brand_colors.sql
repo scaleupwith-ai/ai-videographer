@@ -11,3 +11,4 @@ COMMENT ON COLUMN user_settings.brand_primary_color IS 'Primary brand color for 
 COMMENT ON COLUMN user_settings.brand_secondary_color IS 'Secondary/background brand color (default: Charcoal)';
 COMMENT ON COLUMN user_settings.brand_accent_color IS 'Accent/highlight color (default: Coral)';
 
+

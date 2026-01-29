@@ -94,3 +94,4 @@ CREATE INDEX IF NOT EXISTS idx_otp_codes_email ON otp_codes(email);
 -- Auto-delete expired OTPs (run via cron or manually)
 -- DELETE FROM otp_codes WHERE expires_at < NOW();
 
+

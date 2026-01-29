@@ -61,3 +61,4 @@ CREATE TRIGGER video_jobs_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION update_video_jobs_updated_at();
 
+
