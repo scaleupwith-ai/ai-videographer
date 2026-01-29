@@ -118,7 +118,7 @@ function enhanceScriptWithPauses(script: string): string {
 }
 
 // Generate timed captions using Deepgram
-async function generateTimedCaptions(audioBuffer: Buffer): Promise<{
+async function generateTimedCaptions(audioBuffer: Buffer, wordsPerBlock: number = 3): Promise<{
   captions: Array<{ start: number; end: number; text: string }>;
   formattedCaptions: string;
   durationSec: number;
@@ -156,7 +156,9 @@ async function generateTimedCaptions(audioBuffer: Buffer): Promise<{
       return { captions: [], formattedCaptions: "", durationSec };
     }
 
-    // Group words into caption segments (roughly 2-5 words each or by punctuation)
+    console.log(`Grouping captions with ${wordsPerBlock} words per block`);
+    
+    // Group words into caption segments based on user setting
     const captions: Array<{ start: number; end: number; text: string }> = [];
     let currentSegment: typeof words = [];
     
@@ -166,9 +168,10 @@ async function generateTimedCaptions(audioBuffer: Buffer): Promise<{
       
       const isPunctuation = /[.!?,]$/.test(word.punctuated_word || word.word);
       const isLastWord = i === words.length - 1;
-      const segmentTooLong = currentSegment.length >= 5;
+      const segmentReachedLimit = currentSegment.length >= wordsPerBlock;
       
-      if (isPunctuation || isLastWord || segmentTooLong) {
+      // Always break at punctuation or end, or when we reach the word limit
+      if (isPunctuation || isLastWord || segmentReachedLimit) {
         const text = currentSegment.map((w: any) => w.punctuated_word || w.word).join(' ');
         captions.push({
           start: currentSegment[0].start,
@@ -183,6 +186,8 @@ async function generateTimedCaptions(audioBuffer: Buffer): Promise<{
     const formattedCaptions = captions
       .map(c => `${formatTime(c.start)}-${formatTime(c.end)} ${c.text}`)
       .join('\n');
+    
+    console.log(`Generated ${captions.length} caption segments`);
 
     return { captions, formattedCaptions, durationSec };
   } catch (error) {
@@ -201,14 +206,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { script, voiceId } = await request.json() as {
+    const { script, voiceId, wordsPerBlock } = await request.json() as {
       script: string;
       voiceId: string; // This is our database voice ID, not ElevenLabs ID
+      wordsPerBlock?: number;
     };
 
     if (!script || !voiceId) {
       return NextResponse.json({ error: "Script and voiceId are required" }, { status: 400 });
     }
+    
+    const captionWordsPerBlock = wordsPerBlock || 3;
 
     // Fetch the ElevenLabs voice ID from our database
     const { data: voice, error: voiceError } = await adminSupabase
@@ -273,8 +281,8 @@ export async function POST(request: NextRequest) {
 
     const audioBuffer = Buffer.from(await elevenLabsResponse.arrayBuffer());
 
-    // Generate timed captions using Deepgram
-    const { captions, formattedCaptions, durationSec: deepgramDuration } = await generateTimedCaptions(audioBuffer);
+    // Generate timed captions using Deepgram with user's words per block setting
+    const { captions, formattedCaptions, durationSec: deepgramDuration } = await generateTimedCaptions(audioBuffer, captionWordsPerBlock);
 
     // Upload to R2
     const key = `voiceovers/${user.id}/${uuid()}.mp3`;

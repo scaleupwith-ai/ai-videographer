@@ -450,6 +450,7 @@ export default function NewVideoPage() {
           body: JSON.stringify({
             script: finalScript,
             voiceId: voiceToUse,
+            wordsPerBlock: enableCaptions ? captionWordsPerBlock : 3, // Pass caption setting
           }),
         });
 
@@ -1057,14 +1058,16 @@ export default function NewVideoPage() {
                 <CardContent className="space-y-4">
                   <Textarea
                     value={description}
-                    onChange={(e) => setDescription(e.target.value)}
+                    onChange={(e) => setDescription(e.target.value.slice(0, 1000))}
                     placeholder="E.g., Create a 30-second promotional video for our new running shoes. Show the product in action with athletic scenes. Make it energetic and modern with upbeat music."
                     rows={6}
+                    maxLength={1000}
                     className="resize-none"
                   />
-                  <p className="text-sm text-muted-foreground">
-                    Be specific about style, mood, music preference, and what you want to show
-                  </p>
+                  <div className="flex justify-between text-sm text-muted-foreground">
+                    <span>Be specific about style, mood, music preference, and what you want to show</span>
+                    <span>{description.length}/1000</span>
+                  </div>
                 </CardContent>
               </Card>
             )}
@@ -1508,14 +1511,16 @@ export default function NewVideoPage() {
               <CardContent className="space-y-4">
                 <Textarea
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={(e) => setDescription(e.target.value.slice(0, 1000))}
                   placeholder="E.g., Create a 30-second promotional video for our new running shoes. Show the product in action with athletic scenes. Make it energetic and modern."
                   rows={6}
+                  maxLength={1000}
                   className="resize-none"
                 />
-                <p className="text-sm text-muted-foreground">
-                  Be specific about style, mood, and what you want to show
-                </p>
+                <div className="flex justify-between text-sm text-muted-foreground">
+                  <span>Be specific about style, mood, and what you want to show</span>
+                  <span>{description.length}/1000</span>
+                </div>
 
                 {/* Quality Selection */}
                 <div className="pt-4 border-t space-y-3">

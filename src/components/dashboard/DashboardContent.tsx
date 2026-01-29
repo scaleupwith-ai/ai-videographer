@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -16,13 +16,10 @@ import {
   CheckCircle,
   XCircle,
   Loader2,
-  Wand2,
-  ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { AgentJobsList } from "@/components/agent/AgentJobCard";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -87,28 +84,6 @@ const typeLabels: Record<string, string> = {
 export function DashboardContent({ initialProjects }: DashboardContentProps) {
   const router = useRouter();
   const [projects] = useState(initialProjects);
-  const [hasActiveJobs, setHasActiveJobs] = useState(false);
-  
-  // Check for active agent jobs
-  useEffect(() => {
-    const checkJobs = async () => {
-      try {
-        const res = await fetch("/api/agent/jobs?limit=5");
-        if (res.ok) {
-          const data = await res.json();
-          const activeJobs = data.jobs?.filter((j: { status: string }) => 
-            !['completed', 'failed'].includes(j.status)
-          );
-          setHasActiveJobs(activeJobs?.length > 0);
-        }
-      } catch {
-        // Ignore errors
-      }
-    };
-    checkJobs();
-    const interval = setInterval(checkJobs, 10000);
-    return () => clearInterval(interval);
-  }, []);
 
   const handleDelete = async (projectId: string) => {
     try {
@@ -182,26 +157,6 @@ export function DashboardContent({ initialProjects }: DashboardContentProps) {
           </Button>
         </div>
       </header>
-
-      {/* Active AI Jobs Banner */}
-      {hasActiveJobs && (
-        <div className="mx-6 mt-4 p-4 rounded-lg bg-primary/10 border border-primary/20">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-                <Wand2 className="w-5 h-5 text-primary animate-pulse" />
-              </div>
-              <div>
-                <p className="font-medium">AI is creating your video</p>
-                <p className="text-sm text-muted-foreground">You can close this page - we&apos;ll notify you when it&apos;s ready</p>
-              </div>
-            </div>
-            <Button variant="ghost" size="sm" onClick={() => router.push("/app/jobs")}>
-              View Jobs <ChevronRight className="w-4 h-4 ml-1" />
-            </Button>
-          </div>
-        </div>
-      )}
 
       {/* Projects Grid */}
       <div className="p-6">

@@ -408,13 +408,14 @@ export function buildFFmpegCommand(
   const audioLabels: string[] = [];
   let audioIndex = 0;
 
-  // Process music - apply volume more aggressively for faint levels
+  // Process music - boost volume more aggressively to be audible alongside voiceover
   if (musicInputIdx >= 0) {
-    // Volume levels: faint=0.1, low=0.2, medium=0.3, loud=0.5
-    // For very low volumes, apply twice for better effect
-    const musicVol = globalSettings.music?.volume ?? 0.3;
+    // Volume levels from user: faint=0.1, low=0.2, medium=0.3, loud=0.5
+    // We boost by 2x to compensate for amix reducing levels when mixed with voiceover
+    const rawMusicVol = globalSettings.music?.volume ?? 0.3;
+    const musicVol = rawMusicVol * 2; // Boost music volume to be audible
     const musicLabel = `music${audioIndex++}`;
-    console.log(`[MUSIC DEBUG] ✓ Adding music to audio mix - input index: ${musicInputIdx}, volume: ${musicVol}, duration: ${totalDuration}s`);
+    console.log(`[MUSIC DEBUG] ✓ Adding music - raw volume: ${rawMusicVol}, boosted volume: ${musicVol}, duration: ${totalDuration}s`);
     filterParts.push(
       `[${musicInputIdx}:a]aloop=loop=-1:size=2e+09,atrim=duration=${totalDuration},volume=${musicVol}[${musicLabel}]`
     );

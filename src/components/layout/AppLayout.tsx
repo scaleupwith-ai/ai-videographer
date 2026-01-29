@@ -15,7 +15,6 @@ import {
   CreditCard,
   LayoutTemplate,
   Sparkles,
-  Wand2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -63,7 +62,6 @@ export function AppLayout({ children, projects = [] }: AppLayoutProps) {
 
   const navItems = [
     { href: "/app", icon: FolderOpen, label: "Projects" },
-    { href: "/app/jobs", icon: Wand2, label: "AI Jobs" },
     { href: "/app/templates", icon: LayoutTemplate, label: "Templates" },
     { href: "/app/effects-test", icon: Sparkles, label: "Effects Lab" },
     { href: "/app/assets", icon: ImageIcon, label: "Assets" },
