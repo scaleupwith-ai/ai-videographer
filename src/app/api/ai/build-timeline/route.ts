@@ -496,12 +496,133 @@ RESPOND WITH ONLY THIS JSON:
         }
       }
       
-      console.log(`[Build Timeline] Created ${brollOverlays.length} b-roll overlay segments`);
+      console.log(`[Build Timeline] Created ${brollOverlays.length} b-roll segments`);
       
       // Create the project ID
       const projectId = uuid();
       
-      // Build the talking head timeline
+      // Build interleaved scenes (talking head + b-roll cuts)
+      // This creates a proper scene list that alternates between talking head and b-roll
+      const interleavedScenes: any[] = [];
+      let currentTime = 0;
+      let sceneIndex = 0;
+      
+      // Sort b-roll by start time
+      const sortedBroll = [...brollOverlays].sort((a, b) => a.startTime - b.startTime);
+      let brollIdx = 0;
+      
+      while (currentTime < videoDuration) {
+        const nextBroll = sortedBroll[brollIdx];
+        
+        if (nextBroll && nextBroll.startTime > currentTime) {
+          // Add talking head segment until next b-roll
+          const segmentDuration = nextBroll.startTime - currentTime;
+          interleavedScenes.push({
+            id: `scene-th-${sceneIndex++}`,
+            assetId: talkingHeadAsset.id,
+            clipId: talkingHeadAsset.id,
+            clipUrl: talkingHeadAsset.public_url,
+            intent: "Talking head footage",
+            clipDescription: (talkingHeadAsset.metadata as any)?.description || talkingHeadAsset.filename,
+            isUserAsset: true,
+            isTalkingHead: true,
+            kind: "video" as const,
+            inSec: currentTime, // Start from where we are in the source
+            outSec: currentTime + segmentDuration,
+            durationSec: segmentDuration,
+            cropMode: "cover" as const,
+            overlays: { title: null, subtitle: null, position: "lower_third" as const, stylePreset: "minimal" as const },
+            transitionOut: "fade",
+            transitionDuration: 0.3,
+            // Track source audio timing for the render worker
+            sourceAudioStart: currentTime,
+            sourceAudioEnd: currentTime + segmentDuration,
+          });
+          currentTime = nextBroll.startTime;
+        }
+        
+        if (nextBroll && currentTime >= nextBroll.startTime) {
+          // Add b-roll scene
+          const brollDuration = Math.min(nextBroll.duration, videoDuration - currentTime);
+          if (brollDuration > 0) {
+            interleavedScenes.push({
+              id: `scene-br-${sceneIndex++}`,
+              assetId: null,
+              clipId: nextBroll.clipId,
+              clipUrl: nextBroll.clipUrl,
+              intent: nextBroll.description || "B-roll footage",
+              clipDescription: nextBroll.description || "B-roll",
+              isUserAsset: false,
+              isBroll: true,
+              kind: "video" as const,
+              inSec: 0, // Start from beginning of b-roll clip
+              outSec: brollDuration,
+              durationSec: brollDuration,
+              cropMode: "cover" as const,
+              overlays: { title: null, subtitle: null, position: "lower_third" as const, stylePreset: "minimal" as const },
+              transitionOut: "fade",
+              transitionDuration: 0.3,
+              // Track source audio timing - b-roll plays while talking head audio continues
+              sourceAudioStart: currentTime,
+              sourceAudioEnd: currentTime + brollDuration,
+            });
+          }
+          currentTime += brollDuration;
+          brollIdx++;
+        } else if (!nextBroll) {
+          // No more b-roll - add remaining talking head
+          const remainingDuration = videoDuration - currentTime;
+          if (remainingDuration > 0.1) {
+            interleavedScenes.push({
+              id: `scene-th-${sceneIndex++}`,
+              assetId: talkingHeadAsset.id,
+              clipId: talkingHeadAsset.id,
+              clipUrl: talkingHeadAsset.public_url,
+              intent: "Talking head footage",
+              clipDescription: (talkingHeadAsset.metadata as any)?.description || talkingHeadAsset.filename,
+              isUserAsset: true,
+              isTalkingHead: true,
+              kind: "video" as const,
+              inSec: currentTime,
+              outSec: videoDuration,
+              durationSec: remainingDuration,
+              cropMode: "cover" as const,
+              overlays: { title: null, subtitle: null, position: "lower_third" as const, stylePreset: "minimal" as const },
+              transitionOut: null,
+              transitionDuration: 0,
+              sourceAudioStart: currentTime,
+              sourceAudioEnd: videoDuration,
+            });
+          }
+          break;
+        }
+      }
+      
+      // If no b-roll was added, just use the full talking head video
+      if (interleavedScenes.length === 0) {
+        interleavedScenes.push({
+          id: "scene-main",
+          assetId: talkingHeadAsset.id,
+          clipId: talkingHeadAsset.id,
+          clipUrl: talkingHeadAsset.public_url,
+          intent: "Main talking head footage",
+          clipDescription: (talkingHeadAsset.metadata as any)?.description || talkingHeadAsset.filename,
+          isUserAsset: true,
+          isTalkingHead: true,
+          kind: "video" as const,
+          inSec: 0,
+          outSec: videoDuration,
+          durationSec: videoDuration,
+          cropMode: "cover" as const,
+          overlays: { title: null, subtitle: null, position: "lower_third" as const, stylePreset: "minimal" as const },
+          transitionOut: null,
+          transitionDuration: 0,
+        });
+      }
+      
+      console.log(`[Build Timeline] Created ${interleavedScenes.length} interleaved scenes (${interleavedScenes.filter((s: any) => s.isBroll).length} b-roll)`);
+      
+      // Build the talking head timeline with interleaved scenes
       const talkingHeadTimeline = {
         version: 1 as const,
         project: {
@@ -512,42 +633,25 @@ RESPOND WITH ONLY THIS JSON:
           resolution: resolution || { width: 1920, height: 1080 },
           fps: 30,
         },
-        scenes: [
-          {
-            id: "scene-main",
-            assetId: talkingHeadAsset.id,
-            clipId: talkingHeadAsset.id,
-            clipUrl: talkingHeadAsset.public_url,
-            intent: "Main talking head footage",
-            clipDescription: (talkingHeadAsset.metadata as any)?.description || talkingHeadAsset.filename,
-            isUserAsset: true,
-            isTalkingHead: true,
-            kind: "video" as const,
-            inSec: 0,
-            outSec: videoDuration,
-            durationSec: videoDuration,
-            cropMode: "cover" as const,
-            overlays: { title: null, subtitle: null, position: "lower_third" as const, stylePreset: "minimal" as const },
-            transitionOut: null,
-            transitionDuration: 0,
-          },
-        ],
-        brollOverlays: brollOverlays.map((broll, idx) => ({
-          id: `broll-${idx + 1}`,
-          clipId: broll.clipId,
-          clipUrl: broll.clipUrl,
-          description: broll.description,
-          atTimeSec: broll.startTime,
-          durationSec: broll.duration,
-          transitionIn: "fade",
-          transitionOut: "fade",
-          transitionDuration: 0.3,
-        })),
+        scenes: interleavedScenes,
+        // Store the talking head asset info for the render worker to use as audio source
+        talkingHeadSource: {
+          assetId: talkingHeadAsset.id,
+          assetUrl: talkingHeadAsset.public_url,
+          duration: videoDuration,
+        },
         soundEffects: [],
         imageOverlays: [],
         global: {
           music: { assetId: null, audioUrl: null, title: null, volume: 0.2 },
-          voiceover: { assetId: null, volume: 1.0, startOffset: 0 },
+          // Use talking head video as the audio source
+          voiceover: { 
+            assetId: talkingHeadAsset.id, 
+            audioUrl: talkingHeadAsset.public_url,
+            volume: 1.0, 
+            startOffset: 0,
+            isTalkingHeadAudio: true,
+          },
           captions: { 
             enabled: enableCaptions || false, 
             burnIn: enableCaptions || false,
@@ -569,7 +673,7 @@ RESPOND WITH ONLY THIS JSON:
         },
         rendering: {
           output: { url: null, thumbnailUrl: null, durationSec: null, sizeBytes: null },
-          voiceoverDurationSec: 0,
+          voiceoverDurationSec: videoDuration,
           totalDurationSec: videoDuration,
           introDurationSec: 0,
           outroDurationSec: 0,
