@@ -94,19 +94,27 @@ export async function POST(request: NextRequest, context: RouteContext) {
       }
     }
 
+    // Get or create the index
+    let indexId = job.metadata?.index_id;
+    
     // Create new indexing task if needed
     if (!taskId) {
       console.log(`Job ${jobId}: Creating new TwelveLabs indexing task`);
       
-      const indexId = await getOrCreateDefaultIndex();
-      await updateJob({ progress: 10 });
+      indexId = await getOrCreateDefaultIndex();
+      await updateJob({ progress: 10, metadata: { ...job.metadata, index_id: indexId } });
 
       const task = await createIndexingTaskFromUrl(job.asset_url, indexId);
       taskId = task._id;
 
       // Store provider task ID for idempotency
       await updateJob({ provider_task_id: taskId, progress: 15 });
-      console.log(`Job ${jobId}: Created task ${taskId}`);
+      console.log(`Job ${jobId}: Created task ${taskId} in index ${indexId}`);
+    }
+
+    // Ensure we have indexId
+    if (!indexId) {
+      indexId = await getOrCreateDefaultIndex();
     }
 
     // Wait for indexing to complete (if not already done)
@@ -133,8 +141,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     await updateJob({ progress: 75 });
     console.log(`Job ${jobId}: Indexing complete, videoId=${videoId}. Running analysis...`);
 
-    // Perform comprehensive analysis
-    const analysis = await analyzeIndexedVideo(videoId);
+    // Perform comprehensive analysis - pass indexId for video details
+    const analysis = await analyzeIndexedVideo(videoId, indexId);
 
     // Save results - spread analysis first so our videoId and taskId don't get overwritten
     await updateJob({

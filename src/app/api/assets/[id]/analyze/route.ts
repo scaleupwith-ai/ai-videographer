@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 
 /**
  * Background video/image analysis endpoint
@@ -17,7 +17,9 @@ export async function POST(
   console.log(`[Asset Analyze] Starting analysis for asset ${assetId}`);
   
   try {
-    const supabase = await createClient();
+    // Use admin client to fetch asset since this might be called internally
+    // immediately after insert, before the user's session cookie propagates
+    const adminClient = createAdminClient();
     
     // Get reference from request body if provided
     let body: { reference?: string } = {};
@@ -28,15 +30,15 @@ export async function POST(
     }
     const { reference } = body;
 
-    // Fetch the asset
-    const { data: asset, error: fetchError } = await supabase
+    // Fetch the asset using admin client to avoid timing issues
+    const { data: asset, error: fetchError } = await adminClient
       .from("media_assets")
       .select("*")
       .eq("id", assetId)
       .single();
 
     if (fetchError || !asset) {
-      console.error(`[Asset Analyze] Asset not found: ${assetId}`);
+      console.error(`[Asset Analyze] Asset not found: ${assetId}`, fetchError);
       return NextResponse.json({ error: "Asset not found" }, { status: 404 });
     }
 
@@ -51,7 +53,7 @@ export async function POST(
       // Check if TWELVELABS_API_KEY is configured
       if (!process.env.TWELVELABS_API_KEY) {
         console.log(`[Asset Analyze] TwelveLabs not configured, skipping analysis`);
-        await supabase
+        await adminClient
           .from("media_assets")
           .update({ 
             status: 'ready',
@@ -65,18 +67,17 @@ export async function POST(
         return NextResponse.json({ success: true, skipped: true, reason: "TwelveLabs not configured" });
       }
 
-      // Get current user for the video job
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      // Use the asset's owner_id for the video job (since this is an internal call)
+      const userId = asset.owner_id;
+      if (!userId) {
+        return NextResponse.json({ error: "Asset has no owner" }, { status: 400 });
       }
 
       // Create a video job
-      const adminClient = createAdminClient();
       const { data: job, error: jobError } = await adminClient
         .from("video_jobs")
         .insert({
-          user_id: user.id,
+          user_id: userId,
           asset_url: asset.public_url,
           filename: asset.filename,
           content_type: asset.mime_type,
@@ -113,7 +114,7 @@ export async function POST(
       }
 
       // Update asset status to processing
-      await supabase
+      await adminClient
         .from("media_assets")
         .update({ 
           status: 'processing',
@@ -139,7 +140,7 @@ export async function POST(
       // For images, just set to ready with basic metadata
       console.log(`[Asset Analyze] Image asset - setting to ready with basic metadata`);
       
-      await supabase
+      await adminClient
         .from("media_assets")
         .update({ 
           status: 'ready',
@@ -166,8 +167,8 @@ export async function POST(
     
     // Update asset status to indicate failure
     try {
-      const supabase = await createClient();
-      await supabase
+      const errorAdminClient = createAdminClient();
+      await errorAdminClient
         .from("media_assets")
         .update({ 
           status: 'ready', // Set to ready even on failure so user can still use it

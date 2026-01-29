@@ -295,72 +295,154 @@ export interface GenerateResponse {
 }
 
 /**
- * Generate content from an indexed video
+ * Analyze content from an indexed video using the /analyze endpoint
+ * TwelveLabs API v1.3 uses POST /analyze with streaming response
  */
-export async function generateFromVideo(
-  options: GenerateOptions
-): Promise<GenerateResponse> {
-  const { videoId, type, prompt } = options;
+export async function analyzeVideo(
+  videoId: string,
+  prompt: string
+): Promise<string> {
+  const { apiKey } = getConfig();
   
-  const body: Record<string, unknown> = {
+  const body = {
     video_id: videoId,
-    type,
+    prompt,
   };
-  
-  if (prompt) {
-    body.prompt = prompt;
-  }
 
-  const response = await twelveLabsFetch("/generate", {
+  const url = `${TWELVELABS_API_BASE}/analyze`;
+  console.log(`TwelveLabs API Request: POST ${url}`);
+  
+  const response = await fetch(url, {
     method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify(body),
   });
 
-  const data = await safeParseJson(response);
-
   if (!response.ok) {
-    throw new Error(`Failed to generate content: ${JSON.stringify(data)}`);
+    const text = await response.text();
+    throw new Error(`Failed to analyze video: ${response.status} - ${text.substring(0, 500)}`);
   }
 
-  return data as GenerateResponse;
+  // Handle streaming response - collect all chunks
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error("No response body from analyze endpoint");
+  }
+
+  let result = "";
+  const decoder = new TextDecoder();
+  
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    
+    const chunk = decoder.decode(value, { stream: true });
+    // Parse SSE events if present
+    const lines = chunk.split("\n");
+    for (const line of lines) {
+      if (line.startsWith("data:")) {
+        try {
+          const data = JSON.parse(line.slice(5).trim());
+          if (data.text) {
+            result += data.text;
+          }
+        } catch {
+          // Raw text, not JSON
+          result += line.slice(5).trim();
+        }
+      } else if (line.trim() && !line.startsWith("event:")) {
+        // Direct text response
+        try {
+          const data = JSON.parse(line);
+          if (data.data) {
+            result += data.data;
+          }
+        } catch {
+          result += line;
+        }
+      }
+    }
+  }
+
+  return result.trim();
 }
 
 /**
- * Generate a summary of an indexed video
+ * Generate a summary of an indexed video using the /analyze endpoint
  */
 export async function generateSummary(videoId: string): Promise<string> {
-  const response = await generateFromVideo({
+  return analyzeVideo(
     videoId,
-    type: "summary",
-    prompt: "Provide a comprehensive summary of this video including main subjects, actions, setting, and mood.",
-  });
-  return response.data || "";
+    "Provide a comprehensive summary of this video. Include the main subjects, their actions, the setting, atmosphere, and any important visual or audio elements. Be descriptive but concise."
+  );
 }
 
 /**
- * Generate chapters for an indexed video
+ * Generate chapters for an indexed video using the /analyze endpoint
+ * Returns structured chapter data parsed from the AI response
  */
 export async function generateChapters(
   videoId: string
 ): Promise<GenerateResponse["chapters"]> {
-  const response = await generateFromVideo({
+  const response = await analyzeVideo(
     videoId,
-    type: "chapter",
-  });
-  return response.chapters || [];
+    `Analyze this video and break it down into distinct chapters. For each chapter, provide:
+1. A chapter number
+2. The start time in seconds
+3. The end time in seconds  
+4. A short title
+5. A one-sentence summary
+
+Format your response as a JSON array with objects containing: chapter_number, start, end, chapter_title, chapter_summary.
+Only respond with the JSON array, no other text.`
+  );
+  
+  try {
+    // Try to parse JSON from the response
+    const jsonMatch = response.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+  } catch (e) {
+    console.error("Failed to parse chapters JSON:", e);
+  }
+  
+  return [];
 }
 
 /**
- * Generate highlights for an indexed video
+ * Generate highlights for an indexed video using the /analyze endpoint
+ * Returns structured highlight data parsed from the AI response
  */
 export async function generateHighlights(
   videoId: string
 ): Promise<GenerateResponse["highlights"]> {
-  const response = await generateFromVideo({
+  const response = await analyzeVideo(
     videoId,
-    type: "highlight",
-  });
-  return response.highlights || [];
+    `Identify the most interesting or important moments in this video. For each highlight, provide:
+1. The start time in seconds
+2. The end time in seconds
+3. A short title for the highlight
+4. A one-sentence summary of what happens
+
+Format your response as a JSON array with objects containing: start, end, highlight, highlight_summary.
+Only respond with the JSON array, no other text.`
+  );
+  
+  try {
+    // Try to parse JSON from the response
+    const jsonMatch = response.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+  } catch (e) {
+    console.error("Failed to parse highlights JSON:", e);
+  }
+  
+  return [];
 }
 
 // ============================================================================
@@ -444,13 +526,10 @@ export interface VideoDetails {
 }
 
 /**
- * Get video details
+ * Get video details - requires indexId in API v1.3
  */
-export async function getVideoDetails(videoId: string, indexId?: string): Promise<VideoDetails> {
-  // If we have an indexId, use the proper endpoint
-  const endpoint = indexId 
-    ? `/indexes/${indexId}/videos/${videoId}`
-    : `/videos/${videoId}`;
+export async function getVideoDetails(videoId: string, indexId: string): Promise<VideoDetails> {
+  const endpoint = `/indexes/${indexId}/videos/${videoId}`;
   
   const response = await twelveLabsFetch(endpoint);
   const data = await safeParseJson(response);
@@ -481,14 +560,22 @@ export interface VideoAnalysisResult {
  */
 export async function analyzeIndexedVideo(
   videoId: string,
-  indexId?: string
+  indexId: string
 ): Promise<VideoAnalysisResult> {
-  // Fetch all analysis types in parallel
-  const [summary, chapters, highlights, details] = await Promise.all([
-    generateSummary(videoId).catch((e) => {
-      console.error("Failed to generate summary:", e);
-      return "";
-    }),
+  console.log(`[TwelveLabs] Starting comprehensive analysis for video ${videoId} in index ${indexId}`);
+  
+  // Generate summary first - this is the most important
+  let summary = "";
+  try {
+    console.log(`[TwelveLabs] Generating summary...`);
+    summary = await generateSummary(videoId);
+    console.log(`[TwelveLabs] Summary generated: ${summary.substring(0, 100)}...`);
+  } catch (e) {
+    console.error("Failed to generate summary:", e);
+  }
+
+  // Then get chapters and highlights in parallel
+  const [chapters, highlights] = await Promise.all([
     generateChapters(videoId).catch((e) => {
       console.error("Failed to generate chapters:", e);
       return [];
@@ -497,11 +584,17 @@ export async function analyzeIndexedVideo(
       console.error("Failed to generate highlights:", e);
       return [];
     }),
-    getVideoDetails(videoId, indexId).catch((e) => {
-      console.error("Failed to get video details:", e);
-      return null;
-    }),
   ]);
+
+  // Get video details for metadata
+  let details: VideoDetails | null = null;
+  try {
+    details = await getVideoDetails(videoId, indexId);
+  } catch (e) {
+    console.error("Failed to get video details:", e);
+  }
+
+  console.log(`[TwelveLabs] Analysis complete. Summary: ${summary.length > 0 ? 'yes' : 'no'}, Chapters: ${chapters?.length || 0}, Highlights: ${highlights?.length || 0}`);
 
   return {
     videoId,
