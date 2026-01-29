@@ -1071,7 +1071,8 @@ Add overlays where they would enhance the video (or none if not needed).`;
     const selectedMusic = finalMusicId 
       ? musicTracks?.find((t: any) => t.id === finalMusicId) 
       : null;
-    const finalMusicVolume = musicVolume ?? audioResult.music?.volume ?? 0.3;
+    // Increase default music volume to be more audible (0.5 = 50%)
+    const finalMusicVolume = musicVolume ?? audioResult.music?.volume ?? 0.5;
     
     if (selectedMusic) {
       console.log(`[Build Timeline] Using music: "${selectedMusic.title}" (ID: ${selectedMusic.id})`);
