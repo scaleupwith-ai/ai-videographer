@@ -29,6 +29,10 @@ interface UserSettings {
   default_music_volume: number;
   default_voiceover_volume: number;
   default_resolution: string;
+  // Brand colors for effects
+  brand_primary_color: string;
+  brand_secondary_color: string;
+  brand_accent_color: string;
 }
 
 interface MediaAsset {
@@ -68,6 +72,9 @@ export default function SettingsPage() {
     default_music_volume: 0.3,
     default_voiceover_volume: 1.0,
     default_resolution: "1080p",
+    brand_primary_color: "#00f0ff",
+    brand_secondary_color: "#36454f",
+    brand_accent_color: "#ff7f50",
   });
   
   const [introAsset, setIntroAsset] = useState<MediaAsset | null>(null);
@@ -588,6 +595,98 @@ export default function SettingsPage() {
               </span>
             </div>
             <Badge variant="secondary" className="absolute top-2 right-2">Preview</Badge>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Brand Colors for Effects */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Settings className="w-5 h-5" />
+            Brand Colors
+          </CardTitle>
+          <CardDescription>
+            These colors will be used for video effects and overlays
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label>Primary Color</Label>
+              <div className="flex gap-2">
+                <Input
+                  type="color"
+                  value={settings.brand_primary_color}
+                  onChange={(e) => setSettings({ ...settings, brand_primary_color: e.target.value })}
+                  className="w-12 h-10 p-1"
+                />
+                <Input
+                  value={settings.brand_primary_color}
+                  onChange={(e) => setSettings({ ...settings, brand_primary_color: e.target.value })}
+                  className="flex-1"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">Main brand color</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Secondary Color</Label>
+              <div className="flex gap-2">
+                <Input
+                  type="color"
+                  value={settings.brand_secondary_color}
+                  onChange={(e) => setSettings({ ...settings, brand_secondary_color: e.target.value })}
+                  className="w-12 h-10 p-1"
+                />
+                <Input
+                  value={settings.brand_secondary_color}
+                  onChange={(e) => setSettings({ ...settings, brand_secondary_color: e.target.value })}
+                  className="flex-1"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">Background/accent</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Accent Color</Label>
+              <div className="flex gap-2">
+                <Input
+                  type="color"
+                  value={settings.brand_accent_color}
+                  onChange={(e) => setSettings({ ...settings, brand_accent_color: e.target.value })}
+                  className="w-12 h-10 p-1"
+                />
+                <Input
+                  value={settings.brand_accent_color}
+                  onChange={(e) => setSettings({ ...settings, brand_accent_color: e.target.value })}
+                  className="flex-1"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">Highlight color</p>
+            </div>
+          </div>
+
+          {/* Color Preview */}
+          <div className="grid grid-cols-3 gap-4">
+            <div 
+              className="h-20 rounded-lg flex items-center justify-center text-white font-semibold shadow-lg"
+              style={{ backgroundColor: settings.brand_primary_color }}
+            >
+              Primary
+            </div>
+            <div 
+              className="h-20 rounded-lg flex items-center justify-center text-white font-semibold shadow-lg"
+              style={{ backgroundColor: settings.brand_secondary_color }}
+            >
+              Secondary
+            </div>
+            <div 
+              className="h-20 rounded-lg flex items-center justify-center text-black font-semibold shadow-lg"
+              style={{ backgroundColor: settings.brand_accent_color }}
+            >
+              Accent
+            </div>
           </div>
         </CardContent>
       </Card>

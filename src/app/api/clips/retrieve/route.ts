@@ -357,6 +357,51 @@ export async function POST(request: NextRequest) {
     // Sort by score (highest first)
     clipsForAI.sort((a, b) => (b.score || 0) - (a.score || 0));
     
+    // ========================================================================
+    // CRITICAL: If too few clips found (< 5), get fallback generic clips
+    // This prevents videos from freezing when only 1-2 clips match the query
+    // ========================================================================
+    const MIN_CLIPS_NEEDED = 5;
+    if (clipsForAI.length < MIN_CLIPS_NEEDED) {
+      console.log(`[Clip Retrieval] Only ${clipsForAI.length} clips found, fetching ${MIN_CLIPS_NEEDED - clipsForAI.length} fallback clips`);
+      
+      const existingIds = new Set(clipsForAI.map(c => c.id));
+      const fallbackNeeded = MIN_CLIPS_NEEDED - clipsForAI.length;
+      
+      // Get random clips that aren't already in the list
+      const { data: fallbackClips } = await supabase
+        .from("clips")
+        .select("id, description, duration_seconds, source_resolution, clip_link, scene_changes")
+        .not("id", "in", `(${Array.from(existingIds).join(",")})`)
+        .gte("duration_seconds", 3) // At least 3 seconds
+        .order("created_at", { ascending: false })
+        .limit(fallbackNeeded * 3); // Get more to filter by resolution
+      
+      if (fallbackClips && fallbackClips.length > 0) {
+        // Prefer clips matching resolution, but take any if needed
+        const matchingRes = fallbackClips.filter(c => c.source_resolution === resolution);
+        const fallbackToAdd = matchingRes.length >= fallbackNeeded 
+          ? matchingRes.slice(0, fallbackNeeded)
+          : [...matchingRes, ...fallbackClips.filter(c => c.source_resolution !== resolution)].slice(0, fallbackNeeded);
+        
+        // Add fallback clips with low score
+        for (const clip of fallbackToAdd) {
+          clipsForAI.push({
+            id: clip.id,
+            duration: clip.duration_seconds,
+            description: clip.description?.slice(0, 100) || "Generic b-roll",
+            tags: [],
+            resolution: clip.source_resolution || "1080p",
+            clip_link: clip.clip_link,
+            scene_changes: clip.scene_changes || undefined,
+            score: 0.1, // Low score for fallback clips
+          });
+        }
+        
+        console.log(`[Clip Retrieval] Added ${fallbackToAdd.length} fallback clips. Total: ${clipsForAI.length}`);
+      }
+    }
+    
     console.log(`[Clip Retrieval] Returning ${clipsForAI.length} clips for AI (method: ${usedSemanticSearch ? "semantic" : "text/tag"})`);
     
     return NextResponse.json({

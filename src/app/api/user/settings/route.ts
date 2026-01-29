@@ -87,6 +87,10 @@ export async function POST(request: NextRequest) {
       "default_music_volume",
       "default_voiceover_volume",
       "default_resolution",
+      // Brand colors for effects
+      "brand_primary_color",
+      "brand_secondary_color", 
+      "brand_accent_color",
     ];
 
     const updates: Record<string, any> = {
