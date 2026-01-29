@@ -262,21 +262,18 @@ export default function NewVideoPage() {
         }
         break;
       case "talking-head-upload":
-        // After selecting talking head video, go to script
-        setWantVoiceover(true); // Talking head always has voiceover
-        setStep("script");
+        // For talking head, go directly to describe - no voice/script questions
+        // The user's video already has their audio
+        setWantVoiceover(false);
+        setHasScript(false);
+        setStep("describe");
         break;
       case "voiceover":
         setStep("script");
         break;
       case "script":
-        if (videoType === "talking-head") {
-          // Skip assets step for talking head - they already selected their video
-          setStep("describe");
-        } else {
-          setStep("assets");
-          fetchUserAssets();
-        }
+        setStep("assets");
+        fetchUserAssets();
         break;
       case "assets":
         setStep("describe");
@@ -296,18 +293,15 @@ export default function NewVideoPage() {
         setStep("video-type");
         break;
       case "script":
-        if (videoType === "talking-head") {
-          setStep("talking-head-upload");
-        } else {
-          setStep("voiceover");
-        }
+        setStep("voiceover");
         break;
       case "assets":
         setStep("script");
         break;
       case "describe":
         if (videoType === "talking-head") {
-          setStep("script");
+          // Talking head goes back to upload, skip script/assets
+          setStep("talking-head-upload");
         } else {
           setStep("assets");
         }
@@ -350,7 +344,37 @@ export default function NewVideoPage() {
     setIsGenerating(true);
 
     try {
-      // Step 1: Generate or use existing script
+      // Handle talking head videos differently
+      if (videoType === "talking-head" && talkingHeadAsset) {
+        setGenerationStatus("Analyzing your video for b-roll opportunities...");
+        
+        // For talking head, we use their video as the base and add b-roll overlays
+        const timelineRes = await fetch("/api/ai/build-timeline", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: description.slice(0, 50) || "Talking Head Video",
+            description: description,
+            talkingHeadMode: true,
+            talkingHeadAssetId: talkingHeadAsset.id,
+            talkingHeadDuration: talkingHeadAsset.duration_sec || 60,
+            resolution: { width: 1920, height: 1080 },
+          }),
+        });
+
+        if (!timelineRes.ok) {
+          const errorData = await timelineRes.json().catch(() => ({}));
+          console.error("Timeline API error:", errorData);
+          throw new Error(errorData.error || "Failed to build timeline");
+        }
+        
+        const timelineData = await timelineRes.json();
+        toast.success("Timeline generated! Opening editor...");
+        router.push(`/app/projects/${timelineData.projectId}/edit`);
+        return;
+      }
+
+      // Step 1: Generate or use existing script (for voiceover videos)
       let finalScript = script;
       let voiceDuration = 0;
       let voiceoverAssetId: string | null = null;
@@ -632,7 +656,7 @@ export default function NewVideoPage() {
           <div className="max-w-3xl mx-auto space-y-8">
             <div className="text-center">
               <h1 className="text-3xl font-bold mb-2">Select Your Talking Head Video</h1>
-              <p className="text-muted-foreground">Choose the video where you&apos;re speaking to camera</p>
+              <p className="text-muted-foreground">Choose the video where you&apos;re speaking to camera. AI will add b-roll overlays.</p>
             </div>
 
             <Card>
@@ -642,7 +666,7 @@ export default function NewVideoPage() {
                   Your Videos
                 </CardTitle>
                 <CardDescription>
-                  Select the main talking head footage. AI will sync it with your script and add b-roll overlays.
+                  Select your main footage. We&apos;ll keep your audio and add relevant b-roll clips on top.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -721,50 +745,6 @@ export default function NewVideoPage() {
                     </p>
                   </div>
                 )}
-              </CardContent>
-            </Card>
-
-            {/* Voice selection for talking head */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Mic className="w-5 h-5 text-primary" />
-                  Choose AI Voice
-                </CardTitle>
-                <CardDescription>
-                  Select the voice for your generated script narration
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {voices.map((voice) => (
-                    <button
-                      key={voice.id}
-                      onClick={() => setSelectedVoiceId(voice.id)}
-                      className={cn(
-                        "p-3 rounded-lg border text-left transition-all",
-                        selectedVoiceId === voice.id
-                          ? "border-primary bg-primary/10"
-                          : "border-border hover:border-primary/50"
-                      )}
-                    >
-                      <div className="flex items-center gap-2">
-                        <Avatar className="w-8 h-8">
-                          {voice.profile_image_url ? (
-                            <AvatarImage src={voice.profile_image_url} />
-                          ) : null}
-                          <AvatarFallback>{voice.name[0]}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="font-medium text-sm">{voice.name}</p>
-                          {voice.is_default && (
-                            <Badge variant="secondary" className="text-xs">Default</Badge>
-                          )}
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
               </CardContent>
             </Card>
           </div>
@@ -1582,12 +1562,11 @@ export default function NewVideoPage() {
             <div className="flex items-center justify-between text-sm mb-2">
               <span className="text-muted-foreground">
                 {videoType === "talking-head" ? (
-                  // Talking head: video-type -> upload -> script -> describe
+                  // Talking head: video-type -> upload -> describe (3 steps)
                   `Step ${
                     step === "video-type" ? 1 :
-                    step === "talking-head-upload" ? 2 :
-                    step === "script" ? 3 : 4
-                  } of 4`
+                    step === "talking-head-upload" ? 2 : 3
+                  } of 3`
                 ) : (
                   // Voiceover: video-type -> voiceover -> script -> assets -> describe
                   `Step ${
@@ -1604,9 +1583,8 @@ export default function NewVideoPage() {
                 className="h-full bg-primary transition-all"
                 style={{ 
                   width: videoType === "talking-head" 
-                    ? (step === "video-type" ? "25%" :
-                       step === "talking-head-upload" ? "50%" :
-                       step === "script" ? "75%" : "100%")
+                    ? (step === "video-type" ? "33%" :
+                       step === "talking-head-upload" ? "66%" : "100%")
                     : (step === "video-type" ? "20%" :
                        step === "voiceover" ? "40%" :
                        step === "script" ? "60%" :
