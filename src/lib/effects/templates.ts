@@ -61,11 +61,13 @@ export interface EffectConfig {
 // HELPER FUNCTIONS
 // ============================================================================
 
-function hexToFFmpeg(hex: string): string {
+function hexToFFmpeg(hex: string | undefined | null): string {
+  if (!hex) return "0x000000"; // Default to black if undefined
   return hex.replace('#', '0x');
 }
 
-function escapeFFmpegText(text: string): string {
+function escapeFFmpegText(text: string | undefined | null): string {
+  if (!text) return "";
   return text
     .replace(/\\/g, "\\\\\\\\")
     .replace(/'/g, "'\\''")

@@ -585,7 +585,9 @@ export default function EffectsTestPage() {
                   </CardHeader>
                   <CardContent>
                     <pre className="bg-slate-900 text-green-400 p-4 rounded-lg overflow-x-auto text-sm whitespace-pre-wrap">
-                      {selectedEffect.generateFilter(config, { width: 1920, height: 1080 })}
+                      {Object.keys(config).length > 0 
+                        ? selectedEffect.generateFilter(config, { width: 1920, height: 1080 })
+                        : "Loading..."}
                     </pre>
                   </CardContent>
                 </Card>
