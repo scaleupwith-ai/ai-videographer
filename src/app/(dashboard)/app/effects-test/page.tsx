@@ -25,6 +25,7 @@ import {
   EFFECT_TEMPLATES, 
   getEffectCategories, 
   getEffectById,
+  applyBrandColors,
   type EffectTemplate,
   type EffectConfig,
   type EffectCategory,
@@ -35,7 +36,7 @@ export default function EffectsTestPage() {
   const [config, setConfig] = useState<EffectConfig>({});
   const [isPlaying, setIsPlaying] = useState(false);
   const [animationKey, setAnimationKey] = useState(0);
-  const [expandedCategories, setExpandedCategories] = useState<Set<EffectCategory>>(new Set(["lower_third", "shape_overlay"]));
+  const [expandedCategories, setExpandedCategories] = useState<Set<EffectCategory>>(new Set(["lower_third", "shape_overlay", "frame"]));
   const [brandColors, setBrandColors] = useState({
     primary: "#00f0ff",
     secondary: "#36454f",
@@ -223,7 +224,27 @@ export default function EffectsTestPage() {
                 <div>
                   <h2 className="text-2xl font-bold">{selectedEffect.name}</h2>
                   <p className="text-muted-foreground">{selectedEffect.description}</p>
-                  <Badge variant="outline" className="mt-2">{selectedEffect.category.replace("_", " ")}</Badge>
+                  <div className="flex gap-2 mt-2">
+                    <Badge variant="outline">{selectedEffect.category.replace("_", " ")}</Badge>
+                    {selectedEffect.aiTextFields.length > 0 && (
+                      <Badge variant="secondary" className="bg-[#00f0ff]/10 text-[#00f0ff]">
+                        AI Generates Text
+                      </Badge>
+                    )}
+                  </div>
+                  
+                  {/* AI Usage Info */}
+                  <div className="mt-4 p-3 rounded-lg bg-muted/50 border border-muted">
+                    <div className="text-sm font-medium mb-1 flex items-center gap-2">
+                      <span className="text-[#00f0ff]">🤖</span> AI Usage
+                    </div>
+                    <p className="text-sm text-muted-foreground">{selectedEffect.aiUsage}</p>
+                    {selectedEffect.aiTextFields.length > 0 && (
+                      <p className="text-xs text-muted-foreground mt-2">
+                        AI will populate: <span className="text-foreground">{selectedEffect.aiTextFields.join(", ")}</span>
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 {/* Preview */}
@@ -292,8 +313,8 @@ export default function EffectsTestPage() {
                           style={{
                             width: `${config.boxWidth as number || 50}%`,
                             backgroundColor: config.boxColor as string || brandColors.primary,
-                            right: config.slideFrom === "right" ? 0 : "auto",
-                            left: config.slideFrom !== "right" ? 0 : "auto",
+                            right: selectedEffect.id === "slide-box-right" ? 0 : "auto",
+                            left: selectedEffect.id === "slide-box-left" ? 0 : "auto",
                             display: "flex",
                             flexDirection: "column",
                             alignItems: "center",
@@ -316,67 +337,38 @@ export default function EffectsTestPage() {
                         </div>
                       )}
 
-                      {selectedEffect.category === "text_overlay" && (
-                        <div 
-                          key={animationKey}
-                          className="absolute inset-0 flex items-center justify-center"
-                          style={isPlaying ? { animation: `fadeInOut-${animationKey} ${totalDuration}s ease-in-out` } : {}}
-                        >
-                          <div 
-                            className="font-bold text-shadow-lg"
-                            style={{ 
-                              color: config.textColor as string || "#fff",
-                              fontSize: `${(config.fontSize as number || 72) / 3}px`,
-                              textShadow: "0 4px 20px rgba(0,0,0,0.5)",
-                            }}
-                          >
-                            {config.text as string || "Sample Text"}
-                          </div>
-                        </div>
-                      )}
-
-                      {selectedEffect.category === "social" && (
-                        <div 
-                          key={animationKey}
-                          className="absolute bottom-[15%] right-[10%]"
-                          style={isPlaying ? getPreviewAnimation(selectedEffect) : {}}
-                        >
-                          <div 
-                            className="px-6 py-3 rounded font-bold"
-                            style={{ 
-                              backgroundColor: config.bgColor as string || "#ff0000",
-                              color: config.textColor as string || "#fff",
-                            }}
-                          >
-                            {config.text as string || "SUBSCRIBE"}
-                          </div>
-                        </div>
-                      )}
-
                       {selectedEffect.category === "frame" && (
                         <div 
                           key={animationKey}
                           className="absolute inset-0 pointer-events-none"
                         >
-                          {selectedEffect.id === "frame-letterbox" && (
+                          {selectedEffect.id === "letterbox-with-text" && (
                             <>
                               <div 
-                                className="absolute top-0 left-0 right-0"
+                                className="absolute top-0 left-0 right-0 flex items-center justify-center"
                                 style={{ 
                                   height: `${config.barHeight as number || 12}%`,
                                   backgroundColor: config.barColor as string || "#000",
+                                  color: config.textColor as string || "#fff",
+                                  fontSize: "14px",
                                 }}
-                              />
+                              >
+                                {config.topText as string || ""}
+                              </div>
                               <div 
-                                className="absolute bottom-0 left-0 right-0"
+                                className="absolute bottom-0 left-0 right-0 flex items-center justify-center"
                                 style={{ 
                                   height: `${config.barHeight as number || 12}%`,
                                   backgroundColor: config.barColor as string || "#000",
+                                  color: config.textColor as string || "#fff",
+                                  fontSize: "14px",
                                 }}
-                              />
+                              >
+                                {config.bottomText as string || "NEW YORK CITY"}
+                              </div>
                             </>
                           )}
-                          {selectedEffect.id === "frame-corner-accents" && (
+                          {selectedEffect.id === "corner-accents" && (
                             <>
                               <div className="absolute top-10 left-10 w-16 h-16 border-l-4 border-t-4" style={{ borderColor: config.cornerColor as string || brandColors.accent }} />
                               <div className="absolute top-10 right-10 w-16 h-16 border-r-4 border-t-4" style={{ borderColor: config.cornerColor as string || brandColors.accent }} />
@@ -384,7 +376,7 @@ export default function EffectsTestPage() {
                               <div className="absolute bottom-10 right-10 w-16 h-16 border-r-4 border-b-4" style={{ borderColor: config.cornerColor as string || brandColors.accent }} />
                             </>
                           )}
-                          {selectedEffect.id === "frame-border-glow" && (
+                          {selectedEffect.id === "border-glow" && (
                             <div 
                               className="absolute inset-5 border-4"
                               style={{ 
@@ -394,40 +386,6 @@ export default function EffectsTestPage() {
                             />
                           )}
                         </div>
-                      )}
-
-                      {selectedEffect.category === "progress" && (
-                        <>
-                          {selectedEffect.id === "progress-bar-bottom" && (
-                            <div className="absolute bottom-0 left-0 right-0">
-                              <div 
-                                className="h-2"
-                                style={{ backgroundColor: config.bgColor as string || "#333" }}
-                              >
-                                <div 
-                                  key={animationKey}
-                                  className="h-full"
-                                  style={{ 
-                                    backgroundColor: config.barColor as string || brandColors.primary,
-                                    width: isPlaying ? "100%" : "30%",
-                                    transition: isPlaying ? `width ${config.hold}s linear` : "none",
-                                  }}
-                                />
-                              </div>
-                            </div>
-                          )}
-                          {selectedEffect.id === "progress-countdown" && (
-                            <div 
-                              className="absolute top-5 right-5 w-20 h-20 rounded-full flex items-center justify-center text-3xl font-bold"
-                              style={{ 
-                                backgroundColor: config.bgColor as string || "#000",
-                                color: config.textColor as string || "#fff",
-                              }}
-                            >
-                              {isPlaying ? "..." : config.startNumber as number || 10}
-                            </div>
-                          )}
-                        </>
                       )}
 
                       {/* Playing indicator */}

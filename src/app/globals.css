@@ -131,6 +131,22 @@
   }
 }
 
+/* Fix: Ensure main content areas can scroll properly */
+main {
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Ensure flex children can scroll when needed */
+.flex-1 {
+  min-height: 0;
+}
+
+/* Pages with h-full should still be able to scroll */
+.h-full {
+  min-height: 0;
+}
+
 /* Ensure pages can scroll */
 .overflow-y-auto,
 .overflow-auto {
